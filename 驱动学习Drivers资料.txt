@@ -1,0 +1,77 @@
+
+MSDN 我告诉你    下载各种微软系统，工具等
+http://msdn.itellyou.cn/
+
+学习过程：
+1. 看视频，做笔记！
+2. 看书，做笔记，做练习
+3. 看几个博客看一下，涨点知识
+
+////////////////////////////////////////////////////////////
+X86驱动编程视频
+
+看雪入门视频
+
+// 驱动开发环境
+http://exp-blog.com/2018/07/26/pid-2137/
+http://exp-blog.com/2018/07/26/pid-2146/
+
+看雪视频
+https://www.kanxue.com/book-30.htm
+
+张佩 驱动讲稿  视频
+https://i.youku.com/i/UMzQzODg3MzU2/videos?spm=a2hzp.8244740.0.0
+
+
+梦之未来 不清晰
+
+https://i.youku.com/i/UMTMxNjcwNDk3Mg==?spm=a2h0j.11185381.module_basic_sub.A
+
+基础视频
+https://i.youku.com/i/UMzE4MTI5NTA2OA==/videos?spm=a2hzp.8253876.0.0
+
+// 基础视频
+https://www.bilibili.com/video/av26193169/
+
+X64位零基础驱动编程 视频
+https://i.youku.com/i/UMTYxNjAzNDI3Mg==/playlists?spm=a2hzp.8253869.0.0
+
+
+// 驱动加载器 
+https://blog.csdn.net/superqiong2011/article/details/9198195
+https://www.cnblogs.com/iBinary/p/8280912.html
+
+
+
+// 微软驱动程序入门文档
+
+https://msdn.microsoft.com/zh-cn/library/windows/hardware/ff557573(v=vs.85).aspx
+
+微软新文档网址 docs  上驱动开发页
+https://docs.microsoft.com/zh-cn/windows-hardware/drivers/develop/
+https://github.com/Microsoft/Windows-driver-samples
+
+
+
+// 关于内核 和 驱动的博客文章
+https://blog.csdn.net/ikerpeng/article/category/2506231 // 基础 博客
+https://blog.csdn.net/blog_index/article/list/4     // 张佩博客
+http://www.yiiyee.cn/Blog/
+
+https://blog.csdn.net/Sagittarius_Warrior/article/category/5977339/2
+https://blog.csdn.net/shevacoming/article/category/1143898/4
+https://bbs.pediy.com/user-353841-1.htm
+
+
+微软github驱动框架 WDF
+https://github.com/Microsoft/Windows-Driver-Frameworks
+
+
+
+
+
+
+
+
+
+
