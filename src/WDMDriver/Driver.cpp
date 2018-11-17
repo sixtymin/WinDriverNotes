@@ -91,7 +91,7 @@ NTSTATUS HandleRemoveDevice(PDEVICE_EXTENSION pdx, PIRP Irp)
 		IoDetachDevice(pdx->NextStackDevice);
 	}
 
-	IoDetachDevice(pdx->fdo);
+	IoDeleteDevice(pdx->fdo);
 	KdPrint(("Leave HandleRemoveDevice\n"));
 	return status;
 }
