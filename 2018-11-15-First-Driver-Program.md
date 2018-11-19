@@ -193,10 +193,10 @@ typedef struct _DRIVER_OBJECT *PDRIVER_OBJECT;
 先说驱动编译的方式都有哪些呢？如下列举出了一些！
 
 1. 手动一行一行输入编译命令行和链接行。
-2. 建立makefile文件，用nmake工具进行编译
-3. 建立makefile，sources，dirs文件用build工具编译
-4. 修改VC集成开发环境中Win32程序编译设置编译驱动
-5. 使用VirtualDDK，DDKWizard集成到低版本的VS中模板创建工程编译，同时包括EasySys创建编译工程
+2. 建立makefile文件，用nmake工具进行编译。
+3. 建立makefile，sources，dirs文件用build工具编译。
+4. 修改VC集成开发环境中Win32程序编译设置编译驱动。
+5. 使用VirtualDDK，DDKWizard集成到低版本的VS中模板创建工程编译，同时包括EasySys创建编译工程。
 6. 使用高版本的Visual Studio，比如VS2015等。
 
 其中最为方便的当属于直接使用`Visual Studio 2013`或更高版本，它们直接创建出编译工程来，如下图为VS2017中创建驱动工程。
@@ -208,11 +208,11 @@ typedef struct _DRIVER_OBJECT *PDRIVER_OBJECT;
 ![图3 VS2008和VirtualDDK](2018-11-15-First-Driver-Program-VS2008-VirutalDDK-DriverProject.jpg)
 ![图4 VS2008和VirtualDDK](2018-11-15-First-Driver-Program-VS2008-VirutalDDK-DriverProject-1.jpg)
 
-如果更简单的方式，则是编写makefile，sources，dirs文件，直接使用WDK提供的编译命令行运行build命令进行编译了。如图5为WDK7600中提供的编译命令行环境。
+如果更简单的方式，则是编写makefile，sources，dirs文件，直接使用WDK提供的编译命令行运行build命令进行编译了。如图5为`WDK7600`中提供的编译命令行环境。
 
-![图5 VS2008和VirtualDDK](2018-11-15-First-Driver-Program-WDK-Compile-Cmds.png)
+![图5 VS2008和VisualDDK](2018-11-15-First-Driver-Program-WDK-Compile-Cmds.png)
 
-其他的就不再详细说了，其实这些编译方式最终都要使用`cl.exe`和`link.exe`进行编译链接；而这些使用VS建立工程的方式（高版本VS除外）最终也是使用`nmake`的方式建立工程，编译时一样需要运行`build`命令解析sources文件进行编译。所以这里防止以后对于这些内容配置错误而无所适从，我们从驱动编译的基础方式——编写makefile和sources文件——这种方式为例进行（其他方式只是对这种方式的包装，当出现了问题看这些参数就知道为何了）。
+其他的就不再详细说了，其实这些编译方式最终都要使用`cl.exe`和`link.exe`进行编译链接；而这些使用VS建立工程的方式（高版本VS除外）最终也是使用`nmake`的方式建立工程，编译时一样需要运行`build`命令解析sources文件进行编译。这里以编写sources文件的方式来编译，如下编写makefile和sources两个文件。
 
 ```
 // makefile
@@ -231,12 +231,13 @@ INCLUDES=$(BASEDIR)\inc; \
 SOURCES=Driver.cpp\
 ```
 
-`DDKWizard`的下载地址[https://bitbucket.org/assarbad/ddkwizard/overview](https://bitbucket.org/assarbad/ddkwizard/overview)
+将`.h`和`.cpp`两个文件和这两个编译文件放在同一目录，然后启动前面的`WDK7600`中的任一编译命令行，运行`build`命令即可，在源码目录下即可看到编译产生的PE文件。
 
-下载`VisualDDK`地址[http://visualddk.sysprogs.org/](http://visualddk.sysprogs.org/)
-
+> 这里提供一下DDKWizard和VisualDDK的下载地址。`DDKWizard`的下载地址[https://bitbucket.org/assarbad/ddkwizard/overview](https://bitbucket.org/assarbad/ddkwizard/overview)；下载`VisualDDK`的地址[http://visualddk.sysprogs.org/](http://visualddk.sysprogs.org/)。这两个创建驱动工程的方法类似，DDKWizard后期已经不再维护，而VisualDDK依然在维护，并且它对新的VS编译器（未添加驱动模板版本）支持也比较好。
 
 **NT式驱动安装**
+
+安装NT式驱动也有很多种方式，
 
 加载NT式驱动可以使用`DriverMonitor`
 
