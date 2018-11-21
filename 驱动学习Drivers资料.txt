@@ -12,17 +12,19 @@ http://msdn.itellyou.cn/
 http://exp-blog.com/2018/07/26/pid-2137/
 http://exp-blog.com/2018/07/26/pid-2146/
 
-看雪视频
-https://www.kanxue.com/book-30.htm
-
->> 看到这里
-
-WDM 即插即用式驱动编写
-http://b.edu.51cto.com/fxcl/course/course-detail?courseId=15379
-
 // 驱动加载器 
 https://blog.csdn.net/superqiong2011/article/details/9198195
 https://www.cnblogs.com/iBinary/p/8280912.html
+
+------------------------------------
+// 驱动视频
+看雪视频
+https://www.kanxue.com/book-30.htm
+
+51CTO上驱动视频课程
+http://edu.51cto.com/course/12418.html
+
+>> 看到这里
 
 张佩 驱动讲稿  视频
 https://i.youku.com/i/UMzQzODg3MzU2/videos?spm=a2hzp.8244740.0.0
@@ -39,6 +41,12 @@ https://www.bilibili.com/video/av26193169/
 X64位零基础驱动编程 视频
 https://i.youku.com/i/UMTYxNjAzNDI3Mg==/playlists?spm=a2hzp.8253869.0.0
 
+WDM 即插即用式驱动编写
+http://b.edu.51cto.com/fxcl/course/course-detail?courseId=15379
+
+
+---------------------------
+// 微软文档
 
 // 微软驱动程序入门文档
 https://msdn.microsoft.com/zh-cn/library/windows/hardware/ff557573(v=vs.85).aspx
@@ -51,6 +59,7 @@ https://github.com/Microsoft/Windows-driver-samples
 https://docs.microsoft.com/zh-cn/windows-hardware/drivers/wdf/
 
 
+---------------------------
 // 关于内核 和 驱动的博客文章
 https://blog.csdn.net/ikerpeng/article/category/2506231 // 基础 博客
 https://blog.csdn.net/blog_index/article/list/4     // 张佩博客

@@ -237,10 +237,91 @@ SOURCES=Driver.cpp\
 
 **NT式驱动安装**
 
-安装NT式驱动也有很多种方式，
+安装NT式驱动也有很多种方式，但是每一种方式最终都是要通过服务控制器SCM（Service Contrl Manager）来完成。
 
-加载NT式驱动可以使用`DriverMonitor`
+首先可以通过服务控制命令来完成NT驱动加载，即`sc`命令，该命令用于与服务控制器和服务进行通信。详细的命令说明可以从命令行中查看它的帮助。如下命令依次可以完成NT驱动的注册，启动，停止与删除功能。
 
+```
+// 创建服务，添加注册表
+sc create test binpath= C:\User\Administrator\Desktop\test.sys type= kernel
+
+// 启动服务
+net start test
+
+// 停止服务
+net stop test
+
+// 删除服务
+sc delete test
+```
+
+> 在Windows NT中，`sc`和`net`两个命令都可以访问服务管理器，它们的区别在什么地方呢？
+> 1. net命令比较老，来自于MS-DOS和OS/2那时候，sc是随着NT的诞生出现的。
+> 2. net仅仅能够启动，停止和暂停服务；sc具有更多高级功能，可以查询状态，创建和删除服务，修改配置等。
+> 3. net仅仅用于本机，而sc命令可以跨网络使用，它命令中有`<server>`选项可以指定主机。
+> 4. net接受服务显示名字作为命令参数，而sc通常使用服务名字（非显示名字）作为参数。
+> 5. sc执行start和stop命令后，并不等待完成；而net执行start和stop命令时等待完成。所以有时用脚本自动执行stop然后执行start，sc容易造成在停止后不能启动问题。
+
+其次可以使用网上已有的驱动安装程序来安装NT驱动，比如`KMDM.exe`(Kernel Mode Driver Manager)，`InstDrv.exe`（驱动加载工具），`DriverMonitor`等。这些工具就不一一解释用法了，启动程序看到了界面也就自然知道如何操作了。
+
+最后还可以自己编写程序来加载驱动。前面说过加载NT驱动是通过创建服务来完成，而服务都是由服务控制器管理，所以可以通过调用服务管理器接口来完成服务的创建，启动，停止以及删除等动作（其实前面说的这些驱动加载器也是通过调用服务管理器接口来完成的服务的加载）。如下为编写驱动加载器要用到的几个服务相关接口。
+
+```
+// 打开服务控制管理器
+SC_HANDLE OpenSCManager(
+  LPCTSTR lpMachineName,   // 机器名称.可以制定计算机,如不指定,给NULL则是打开自己.
+  LPCTSTR lpDatabaseName,  // 打开设备管理器数据库的名称,如果为NULL则使用默认的.
+  DWORD dwDesiredAccess    // 打开的权限.
+);
+
+// 创建服务
+SC_HANDLE CreateService(
+  SC_HANDLE hSCManager,       // 设备管理器句柄,通过OpenScManger返回
+  LPCTSTR lpServiceName,      // 服务或者设备启动的名称
+  LPCTSTR lpDisplayName,      // 服务或者的显示名称
+  DWORD dwDesiredAccess,      // 访问服务或者设备的权限
+  DWORD dwServiceType,        // 创建的服务或者设备的类型,如果是内核驱动,则通过这里给
+  DWORD dwStartType,          // 服务或者设备何时启动
+  DWORD dwErrorControl,       // 服务或者设备启动出错时应用程序处理方式(重启,或者重新长还是.)
+  LPCTSTR lpBinaryPathName,   // 服务或者设备的文件路径,必须给.
+  LPCTSTR lpLoadOrderGroup,   // 服务或者设备排租.
+  LPDWORD lpdwTagId,          // 可以通过注册表来启动服务.
+  LPCTSTR lpDependencies,     // array of dependency names
+  LPCTSTR lpServiceStartName, // 服务的启动名称.
+  LPCTSTR lpPassword          // 密码
+);
+
+// 打开服务
+SC_HANDLE OpenService(
+  SC_HANDLE hSCManager,  // 设备管理器的句柄,通过OpenScManger返回.
+  LPCTSTR lpServiceName, // 服务或者设备的名称.
+  DWORD dwDesiredAccess  // 打开服务或者设备的权限.
+);
+
+// 启动服务
+BOOL StartService(
+  SC_HANDLE hService,            // 服务或者设备句柄
+  DWORD dwNumServiceArgs,        // 二维数组的个数.
+  LPCTSTR* lpServiceArgVectors   // 二维数组.其中每组存储一个服务名称.如果是内核驱动则都给NULL即可.
+);
+
+// 控制服务
+BOOL ControlService(
+  SC_HANDLE hService,               // 服务或者设备句柄,通过OpenService或者CreateService返回.
+  DWORD dwControl,                  // 控制代码. 如果给SERVICE_CONTROL_PAUSE那么服务就会暂停
+  LPSERVICE_STATUS lpServiceStatus  // 服务的状态.是一个结构体,操作系统帮你填好.
+);
+
+// 关闭服务句柄
+BOOL CloseServiceHandle(
+  SC_HANDLE hSCObject   // 服务或者设备的句柄
+);
+
+// 删除服务
+BOOL DeleteService(SC_HANDLE hService); // handle to service
+```
+
+通过这些函数就基本可以编写一个NT驱动加载程序了。
 
 ###WDM驱动程序###
 
