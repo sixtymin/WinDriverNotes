@@ -242,7 +242,7 @@ SOURCES=Driver.cpp\
 首先可以通过服务控制命令来完成NT驱动加载，即`sc`命令，该命令用于与服务控制器和服务进行通信。详细的命令说明可以从命令行中查看它的帮助。如下命令依次可以完成NT驱动的注册，启动，停止与删除功能。
 
 ```
-// 创建服务，添加注册表
+// 创建服务，添加注册表（注意binpath=后面的空格是必须，type=后的空格也是必须）
 sc create test binpath= C:\User\Administrator\Desktop\test.sys type= kernel
 
 // 启动服务
@@ -322,6 +322,18 @@ BOOL DeleteService(SC_HANDLE hService); // handle to service
 ```
 
 通过这些函数就基本可以编写一个NT驱动加载程序了。
+
+**运行NT驱动**
+
+使用前面说的`InstDrv.exe`安装驱动，并运行起来后，系统中有如下一些信息可以体现驱动存在。
+
+![图6 注册表中NT驱动信息](2018-11-15-First-Driver-Program-NT-Register-infomations.jpg)
+
+在设备管理器中NT驱动都是隐藏起来了，需要在菜单中`查看`下拉后，勾选`显示隐藏的设备`，这时列表中可以显示出`非即插即用驱动程序`子项，从这个子项中可以找到我们的设备信息`HelloDDK`。
+
+![图7 设备管理器中NT驱动信息](2018-11-15-First-Driver-Program-DeviceManager-Show-DeviceInfo.jpg)
+
+再就是`HelloDDK.sys`文件，它会被加载到系统的`System`进程中，使用`ProcXp.exe`程序就可以在该进程加载的模块中找到该文件。
 
 ###WDM驱动程序###
 
@@ -596,7 +608,7 @@ void HelloWDMUnload(IN PDRIVER_OBJECT pDriverObject)
 ###驱动调试###
 
 
-如果要调试驱动，则需要在驱动入口处设置断点。使用内联汇编`__asm{int 3;}`。为了X86和X64统一这里可以使用`DebugBreak()`或`KdBreakPoint()`。
+如果要调试驱动，则需要在驱动入口处设置断点。使用内联汇编`__asm{int 3;}`。为了X86和X64统一这里可以使用`KdBreakPoint()`。
 
 
 **参考文章**

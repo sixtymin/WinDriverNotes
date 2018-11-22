@@ -1,13 +1,17 @@
 
 #include "Driver.h"
 
+WCHAR* s_lpDeviceName = L"\\Device\\MyDDKDevice";
+WCHAR* s_lpSymbolicName = L"\\??\\HelloDDK";
+
 #pragma INITCODE 
 extern "C" NTSTATUS DriverEntry(
 		   IN PDRIVER_OBJECT pDriverObject,
 		   IN PUNICODE_STRING pRegistryPath)
 {
 	NTSTATUS status;
-	KdPrint(("Enter DriverEntry\n"));
+    //KdBreakPoint();	
+    KdPrint(("Enter DriverEntry\n"));
 
 	pDriverObject->DriverUnload = HelloDDKUnload;
 	pDriverObject->MajorFunction[IRP_MJ_CREATE] = HelloDDKDispatchRoutine;
@@ -17,7 +21,7 @@ extern "C" NTSTATUS DriverEntry(
 
 	status = CreateDevice(pDriverObject);
 
-	KdPrint(("DriverEntry end\n"));
+	KdPrint(("Leave DriverEntry\n"));
 	return status;
 }
 
@@ -30,7 +34,7 @@ NTSTATUS CreateDevice(IN PDRIVER_OBJECT pDriverObject)
 
 	// 创建设备名
 	UNICODE_STRING devName;
-	RtlInitUnicodeString(&devName, L"\\Device\\MyDDKDevice");
+	RtlInitUnicodeString(&devName, s_lpDeviceName);
 	status = IoCreateDevice(pDriverObject,			// 创建设备
 							sizeof(DEVICE_EXTENSION),
 							&(UNICODE_STRING)devName,
@@ -47,7 +51,7 @@ NTSTATUS CreateDevice(IN PDRIVER_OBJECT pDriverObject)
 
 	// 符号链接
 	UNICODE_STRING symLinkName;
-	RtlInitUnicodeString(&symLinkName, L"\\??\\HelloDDK");
+	RtlInitUnicodeString(&symLinkName, s_lpSymbolicName);
 	pDevExt->ustrSymLinkName = symLinkName;
 	status = IoCreateSymbolicLink(&symLinkName, &devName);
 	if(!NT_SUCCESS(status))
@@ -62,6 +66,7 @@ NTSTATUS CreateDevice(IN PDRIVER_OBJECT pDriverObject)
 #pragma PAGECODE
 VOID HelloDDKUnload(IN PDRIVER_OBJECT pDriverObject)
 {
+    //KdBreakPoint();
 	PDEVICE_OBJECT pNextObj;
 	KdPrint(("Enter DriverUnload\n"));
 	pNextObj = pDriverObject->DeviceObject;
@@ -75,6 +80,7 @@ VOID HelloDDKUnload(IN PDRIVER_OBJECT pDriverObject)
 		pNextObj = pNextObj->NextDevice;
 		IoDeleteDevice(pDevExt->pDevice);
 	}
+	KdPrint(("Leave DriverUnload\n"));
 }
 
 #pragma PAGECODE
