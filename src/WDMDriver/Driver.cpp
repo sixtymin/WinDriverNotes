@@ -141,7 +141,7 @@ NTSTATUS HelloWDMPnp(IN PDEVICE_OBJECT fdo,
 		return status;
 	}
 
-#if DBG
+#if _DBG
 	static char * fcnname[] = 
 	{
 		"IRP_MN_START_DEVICE",
@@ -195,6 +195,7 @@ void HelloWDMUnload(IN PDRIVER_OBJECT pDriverObject)
 {
 	PAGED_CODE();
 	KdPrint(("Enter HelloWDMUnload\n"));
+
 	KdPrint(("Leave HelloWDMUnload\n"));
 }
 

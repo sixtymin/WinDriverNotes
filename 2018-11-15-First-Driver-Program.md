@@ -57,13 +57,17 @@ NTSTATUS HelloDDKDispatchRoutine(IN PDEVICE_OBJECT pDevObj, IN PIRP pIrp);
 // Driver.cpp
 #include "Driver.h"
 
+WCHAR* s_lpDeviceName = L"\\Device\\MyDDKDevice";
+WCHAR* s_lpSymbolicName = L"\\??\\HelloDDK";
+
 #pragma INITCODE
 extern "C" NTSTATUS DriverEntry(
 		   IN PDRIVER_OBJECT pDriverObject,
 		   IN PUNICODE_STRING pRegistryPath)
 {
 	NTSTATUS status;
-	KdPrint(("Enter DriverEntry\n"));
+    //KdBreakPoint();
+    KdPrint(("Enter DriverEntry\n"));
 
 	pDriverObject->DriverUnload = HelloDDKUnload;
 	pDriverObject->MajorFunction[IRP_MJ_CREATE] = HelloDDKDispatchRoutine;
@@ -73,7 +77,7 @@ extern "C" NTSTATUS DriverEntry(
 
 	status = CreateDevice(pDriverObject);
 
-	KdPrint(("DriverEntry end\n"));
+	KdPrint(("Leave DriverEntry\n"));
 	return status;
 }
 
@@ -86,12 +90,12 @@ NTSTATUS CreateDevice(IN PDRIVER_OBJECT pDriverObject)
 
 	// 创建设备名
 	UNICODE_STRING devName;
-	RtlInitUnicodeString(&devName, L"\\Device\\MyDDKDevice");
+	RtlInitUnicodeString(&devName, s_lpDeviceName);
 	status = IoCreateDevice(pDriverObject,			// 创建设备
 							sizeof(DEVICE_EXTENSION),
 							&(UNICODE_STRING)devName,
 							FILE_DEVICE_UNKNOWN,
-							0, TRUE,
+							0, TRUE, 
 							&pDevObj);
 	if (!NT_SUCCESS(status))
 		return status;
@@ -103,7 +107,7 @@ NTSTATUS CreateDevice(IN PDRIVER_OBJECT pDriverObject)
 
 	// 符号链接
 	UNICODE_STRING symLinkName;
-	RtlInitUnicodeString(&symLinkName, L"\\??\\HelloDDK");
+	RtlInitUnicodeString(&symLinkName, s_lpSymbolicName);
 	pDevExt->ustrSymLinkName = symLinkName;
 	status = IoCreateSymbolicLink(&symLinkName, &devName);
 	if(!NT_SUCCESS(status))
@@ -118,6 +122,7 @@ NTSTATUS CreateDevice(IN PDRIVER_OBJECT pDriverObject)
 #pragma PAGECODE
 VOID HelloDDKUnload(IN PDRIVER_OBJECT pDriverObject)
 {
+    //KdBreakPoint();
 	PDEVICE_OBJECT pNextObj;
 	KdPrint(("Enter DriverUnload\n"));
 	pNextObj = pDriverObject->DeviceObject;
@@ -131,6 +136,7 @@ VOID HelloDDKUnload(IN PDRIVER_OBJECT pDriverObject)
 		pNextObj = pNextObj->NextDevice;
 		IoDeleteDevice(pDevExt->pDevice);
 	}
+	KdPrint(("Leave DriverUnload\n"));
 }
 
 #pragma PAGECODE
@@ -160,18 +166,18 @@ typedef struct _DRIVER_OBJECT {
     PDEVICE_OBJECT DeviceObject;	// 驱动所创建的设备对象，它是一个列表
     ULONG Flags;					// 驱动程序的标记，DO_BUFFERED_IO缓存I/O型驱动
 	// 下面几项描述驱动加载位置
-    PVOID DriverStart;				// 驱动的PE入口函数，非DriverEntry
+    PVOID DriverStart;			   // 驱动的PE入口函数，非DriverEntry
     ULONG DriverSize;				// 驱动大小
-    PVOID DriverSection;			// 驱动区段，用于遍历系统所有的驱动
+    PVOID DriverSection;		     // 驱动区段，用于遍历系统所有的驱动
     PDRIVER_EXTENSION DriverExtension;	// 驱动扩展的指针，注意与设备扩展区分，那个是自定义
-    UNICODE_STRING DriverName;		// 驱动名称，用于错误日志确定驱动名称
+    UNICODE_STRING DriverName;	   // 驱动名称，用于错误日志确定驱动名称
     PUNICODE_STRING HardwareDatabase;// 注册表支持，指向字符串为注册表中硬件信息路径
 	// 快速I/O通过使用参数直接调用驱动函数，而不是通过标准IRP机制。
     // 这个机制进用于同步I/O，并且当文件已经被缓存了。
     PFAST_IO_DISPATCH FastIoDispatch;// 指向可选指针表，它用于驱动的快速I/O支持
 	// 如下几个字段描述了特殊驱动使用的函数入口指针
-    PDRIVER_INITIALIZE DriverInit;	 // 
-    PDRIVER_STARTIO DriverStartIo;	 // 
+    PDRIVER_INITIALIZE DriverInit;   //
+    PDRIVER_STARTIO DriverStartIo;   //
     PDRIVER_UNLOAD DriverUnload;	 // 驱动卸载函数
     PDRIVER_DISPATCH MajorFunction[IRP_MJ_MAXIMUM_FUNCTION + 1]; // IRP处理函数
 } DRIVER_OBJECT;
@@ -180,7 +186,7 @@ typedef struct _DRIVER_OBJECT *PDRIVER_OBJECT;
 
 > 因为源文件使用了`.cpp`后缀，所以DriverEntry函数前面需要`extern "C"`，表明将该函数以C编译风格进行编译，防止链接时找不到驱动入口函数。
 
-在入口函数中调用了`CreateDevice`创建了设备对象，并且向`I/O`管理器注册了一些回调函数，这些回调函数有程序员定义，由操作系统负责调用。比如当驱动卸载时会调用驱动对象中的`DriverUnload`成员所指向函数，即我们这里的`HelloDDKUnload`。
+在入口函数中调用了`CreateDevice`创建了设备对象，并且向`I/O`管理器注册了一些回调函数，这些回调函数由程序员定义，操作系统调用。比如当驱动卸载时会调用驱动对象中的`DriverUnload`成员所指向函数，即我们这里的`HelloDDKUnload`。
 
 `CreateDevice`是一个辅助函数，用于创建设备驱动。`IoCreateDevice`函数创建设备对象，设备类型为`FILE_DEVICE_UNKNOWN`，这种设备为独占设备，只能被一个应用程序使用。下面在调用`IoCreateSymbolicLink`用于创建设备对象的符号链接，用于应用程序打开驱动时用。
 
@@ -192,12 +198,12 @@ typedef struct _DRIVER_OBJECT *PDRIVER_OBJECT;
 
 先说驱动编译的方式都有哪些呢？如下列举出了一些！
 
-1. 手动一行一行输入编译命令行和链接行。
+1. 手动一行一行输入编译命令和链接命令来完成。
 2. 建立makefile文件，用nmake工具进行编译。
 3. 建立makefile，sources，dirs文件用build工具编译。
 4. 修改VC集成开发环境中Win32程序编译设置编译驱动。
 5. 使用VirtualDDK，DDKWizard集成到低版本的VS中模板创建工程编译，同时包括EasySys创建编译工程。
-6. 使用高版本的Visual Studio，比如VS2015等。
+6. 使用高版本的Visual Studio，比如VS2015等，直接使用其中的驱动工程模板创建工程，编码且编译。
 
 其中最为方便的当属于直接使用`Visual Studio 2013`或更高版本，它们直接创建出编译工程来，如下图为VS2017中创建驱动工程。
 
@@ -231,7 +237,7 @@ INCLUDES=$(BASEDIR)\inc; \
 SOURCES=Driver.cpp\
 ```
 
-将`.h`和`.cpp`两个文件和这两个编译文件放在同一目录，然后启动前面的`WDK7600`中的任一编译命令行，运行`build`命令即可，在源码目录下即可看到编译产生的PE文件。
+将`.h`和`.cpp`两个文件和这两个编译文件放在同一目录，然后启动前面的`WDK7600`中的任一编译命令行，运行`build`命令即可，在源码目录下即可看到编译产生的SYS文件。
 
 > 这里提供一下DDKWizard和VisualDDK的下载地址。`DDKWizard`的下载地址[https://bitbucket.org/assarbad/ddkwizard/overview](https://bitbucket.org/assarbad/ddkwizard/overview)；下载`VisualDDK`的地址[http://visualddk.sysprogs.org/](http://visualddk.sysprogs.org/)。这两个创建驱动工程的方法类似，DDKWizard后期已经不再维护，而VisualDDK依然在维护，并且它对新的VS编译器（未添加驱动模板版本）支持也比较好。
 
@@ -242,7 +248,7 @@ SOURCES=Driver.cpp\
 首先可以通过服务控制命令来完成NT驱动加载，即`sc`命令，该命令用于与服务控制器和服务进行通信。详细的命令说明可以从命令行中查看它的帮助。如下命令依次可以完成NT驱动的注册，启动，停止与删除功能。
 
 ```
-// 创建服务，添加注册表（注意binpath=后面的空格是必须，type=后的空格也是必须）
+// 创建服务，添加注册表（注意binpath=和type=后面的空格都是必须的）
 sc create test binpath= C:\User\Administrator\Desktop\test.sys type= kernel
 
 // 启动服务
@@ -334,6 +340,8 @@ BOOL DeleteService(SC_HANDLE hService); // handle to service
 ![图7 设备管理器中NT驱动信息](2018-11-15-First-Driver-Program-DeviceManager-Show-DeviceInfo.jpg)
 
 再就是`HelloDDK.sys`文件，它会被加载到系统的`System`进程中，使用`ProcXp.exe`程序就可以在该进程加载的模块中找到该文件。
+
+> 直接从Windows驱动开发技术详解上Copy下来的代码有一点问题，就是`Unload`函数中会用到设备符号链接名删除注册的符号链接，而此时符号链接名的字符串所在内存已经无效。这是由于其中的函数被设置`INIT`代码块，`PAGE`代码块所导致，源代码中的写法，符号链接名字的字符串被编译进`INIT`代码块，一旦驱动初始化完毕就有可能将这块内存卸载，这就导致在驱动卸载需要用到这个字符串时出现访问非法，导致蓝屏。本文所用代码已修改！
 
 ###WDM驱动程序###
 
@@ -599,7 +607,72 @@ void HelloWDMUnload(IN PDRIVER_OBJECT pDriverObject)
 
 函数`HelloWDMDispatchRoutine`和NT式驱动中类似，不再详述。驱动卸载例程`HelloWDMUnload`中工作被前面的函数简化了，所以在该函数中不需要再做什么工作。
 
+**WDM驱动编译**
+
+前面介绍了NT式驱动编译，WDM驱动编译与其类似，这里不再重复。
+
+**WDM驱动安装**
+
+WDM是NT驱动的扩展，主要是针对开发硬件驱动而推出的。随着硬件越来越多，越来越复杂，早期硬件驱动安装都是手动安装，并有人工配置资源，系统中硬件驱动安装就变成了一项专业技能。为了方便硬件驱动程序安装，开发了WDM驱动模型，WDM并不是方便硬件驱动开发，WDM程序比较复杂，理解起来很困难，导致开发WDM驱动比较困难。当然了，如果具有NT式驱动编写基础，WDM硬件驱动也不是特别困难。编写硬件驱动最主要的是了解硬件规格，知道硬件的各种资源，比如内存，寄存器，中断，通过控制内存，寄存器和中断来驱动硬件。
+
+WDM驱动程序安装需要一个INF文件，有两种理解，一种理解是安装文件（`Install File`）或另一种理解是设备信息文件（`Device Information File`）。`Win+R`中输入`inf`就可以定位到系统盘的`Windows\INF`目录，它其中包含了系统安装的所有WDM驱动的INF文件。INF文件格式类似`ini`文件，分区段，每个区段中内容以`key=words`等形式的存在。下面简单介绍INF文件的编写。
+
+INF即是配置文件也是脚本文件，其中包含了部分可执行的指令，有默认的程序可以解析它们。
+
+https://blog.csdn.net/Awey_001/article/details/6094602
+http://www.cppblog.com/killsound/archive/2007/01/25/17970.html
+
+
+
+组成：
+
+Sections
+Keyword
+Value
+
+例如 Version节
+
+[version]
+	Sinature="$Chicago$
+    LayoutFile=filename.inf
+
+常见节区：
+
+[Version]  基本的版本信息
+[DefaultInstall] 默认执行的节区，包含了指向其他节的指针，这些节用于指定文件的拷贝和删除，注册表更新，.ini文件更新等等
+[DestinationDirs] 指定了节区中描述文件拷贝，删除或重命名的文件在磁盘上的位置。
+
+[SourceDisksNames] 列举包含文件的磁盘名字
+
+[SourceDisksFiles] 列举每个文件所在的磁盘
+
+[Strings] 描述上面节中用到的字符串，本地化的字符串
+
+常见操作：
+
+LogConfig  Log日志文件配置
+Copyfiles 复制文件
+Renfiles  文件改名
+Delfiles  删除文件
+UpdateInis 更新Ini文件
+UpdateIniFields 更新Ini字段
+AddReg  添加注册项
+DelReg 删除注册项
+Ini2Reg Ini文件转换为Reg文件
+ADDSERVICE 添加服务
+
+
+
+http://b.edu.51cto.com/fxcl/course/course-detail?courseId=15379
+
+**WDM驱动安装**
+
+
 加载WDM驱动可以使用`EzDriverInstaller`程序。
+
+
+**WDM驱动运行**
+
 
 ###WDF驱动程序###
 
@@ -607,8 +680,7 @@ void HelloWDMUnload(IN PDRIVER_OBJECT pDriverObject)
 
 ###驱动调试###
 
-
-如果要调试驱动，则需要在驱动入口处设置断点。使用内联汇编`__asm{int 3;}`。为了X86和X64统一这里可以使用`KdBreakPoint()`。
+如果要调试驱动，则需要在驱动入口处设置断点。使用内联汇编`__asm{int 3;}`可以实现在代码中加入断点。要实现X86和X64统一，最好使用`KdBreakPoint()`来在代码中设置断点，这具有通用性（X64不支持内联汇编）。
 
 
 **参考文章**
