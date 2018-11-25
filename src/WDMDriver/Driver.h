@@ -18,7 +18,7 @@ typedef struct _DEVICE_EXTENSION
 	UNICODE_STRING ustrSymLinkName;	// ·ûºÅÁ´½Ó
 }DEVICE_EXTENSION, *PDEVICE_EXTENSION;
 
-#define PAGECODE code_seg("PAGE")
+#define PAGEDCODE code_seg("PAGE")
 #define LOCKEDCODE code_seg()
 #define INITCODE code_seg("INIT")
 
@@ -35,6 +35,9 @@ NTSTATUS HelloWDMPnp(IN PDEVICE_OBJECT fdo,
 NTSTATUS HelloWDMDispatchRoutine(IN PDEVICE_OBJECT fdo,
 								 IN PIRP pIrp);
 void HelloWDMUnload(IN PDRIVER_OBJECT pDriverObject);
+
+NTSTATUS DefaultPnpHandler(PDEVICE_EXTENSION pdx, PIRP Irp);
+NTSTATUS HandleRemoveDevice(PDEVICE_EXTENSION pdx, PIRP Irp);
 
 extern "C"
 NTSTATUS DriverEntry(IN PDRIVER_OBJECT pDriverObject,

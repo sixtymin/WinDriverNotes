@@ -1,9 +1,11 @@
 #include "Driver.h"
 
+WCHAR *s_wstrDevName = L"\\Device\\MyWDMDevice";
+WCHAR *s_wstrDevSymLinkName = L"\\DosDevices\\HelloWDM";
+
 #pragma INITCODE
-extern "C"
-NTSTATUS DriverEntry(IN PDRIVER_OBJECT pDriverObject,
-					 IN PUNICODE_STRING pRegistryPath)
+extern "C" NTSTATUS DriverEntry(IN PDRIVER_OBJECT pDriverObject,
+								IN PUNICODE_STRING pRegistryPath)
 {
 	KdPrint(("Enter DriverEntry\n"));
 
@@ -19,7 +21,7 @@ NTSTATUS DriverEntry(IN PDRIVER_OBJECT pDriverObject,
 	return STATUS_SUCCESS;
 }
 
-#pragma PAGECODE
+#pragma PAGEDCODE
 NTSTATUS HelloWDMAddDevice(IN PDRIVER_OBJECT pDriverObject,
 						   IN PDEVICE_OBJECT PhysicalDeviceObject)
 {
@@ -29,14 +31,14 @@ NTSTATUS HelloWDMAddDevice(IN PDRIVER_OBJECT pDriverObject,
 	NTSTATUS status;
 	PDEVICE_OBJECT fdo;
 	UNICODE_STRING devName;
-	RtlInitUnicodeString(&devName, L"\\Device\\MyWDMDevice");
+	RtlInitUnicodeString(&devName, s_wstrDevName);
 	status = IoCreateDevice(pDriverObject,
-							sizeof(DEVICE_EXTENSION),
-							&(UNICODE_STRING)devName,
-							FILE_DEVICE_UNKNOWN,
-							0,
-							FALSE,
-							&fdo);
+		sizeof(DEVICE_EXTENSION),
+		&(UNICODE_STRING)devName,
+		FILE_DEVICE_UNKNOWN,
+		0,
+		FALSE,
+		&fdo);
 	if (!NT_SUCCESS(status))
 		return status;
 
@@ -45,7 +47,7 @@ NTSTATUS HelloWDMAddDevice(IN PDRIVER_OBJECT pDriverObject,
 	pdx->NextStackDevice = IoAttachDeviceToDeviceStack(fdo, PhysicalDeviceObject);
 
 	UNICODE_STRING symLinkName;
-	RtlInitUnicodeString(&symLinkName, L"\\DosDevices\\HelloWDM");
+	RtlInitUnicodeString(&symLinkName, s_wstrDevSymLinkName);
 	pdx->ustrDeviceName = devName;
 	pdx->ustrSymLinkName = symLinkName;
 
@@ -63,10 +65,11 @@ NTSTATUS HelloWDMAddDevice(IN PDRIVER_OBJECT pDriverObject,
 	fdo->Flags |= DO_BUFFERED_IO | DO_POWER_PAGABLE;
 	fdo->Flags &= ~ DO_DEVICE_INITIALIZING;
 	KdPrint(("Leave HelloWDMAddDevice\n"));
-	return STATUS_SUCCESS;
+	return status;
 }
 
-#pragma PAGECODE
+
+#pragma PAGEDCODE
 NTSTATUS DefaultPnpHandler(PDEVICE_EXTENSION pdx, PIRP Irp)
 {
 	PAGED_CODE();
@@ -76,7 +79,8 @@ NTSTATUS DefaultPnpHandler(PDEVICE_EXTENSION pdx, PIRP Irp)
 	return IoCallDriver(pdx->NextStackDevice, Irp);
 }
 
-#pragma PAGECODE
+
+#pragma PAGEDCODE
 NTSTATUS HandleRemoveDevice(PDEVICE_EXTENSION pdx, PIRP Irp)
 {
 	PAGED_CODE();
@@ -84,7 +88,7 @@ NTSTATUS HandleRemoveDevice(PDEVICE_EXTENSION pdx, PIRP Irp)
 
 	Irp->IoStatus.Status = STATUS_SUCCESS;
 	NTSTATUS status = DefaultPnpHandler(pdx, Irp);
-	IoDeleteSymbolicLink(&pdx->ustrSymLinkName);
+	IoDeleteSymbolicLink(&(UNICODE_STRING)pdx->ustrSymLinkName);
 
 	if (pdx->NextStackDevice)
 	{
@@ -93,10 +97,11 @@ NTSTATUS HandleRemoveDevice(PDEVICE_EXTENSION pdx, PIRP Irp)
 
 	IoDeleteDevice(pdx->fdo);
 	KdPrint(("Leave HandleRemoveDevice\n"));
-	return status;
+	return STATUS_SUCCESS;
 }
 
-#pragma PAGECODE
+
+#pragma PAGEDCODE
 NTSTATUS HelloWDMPnp(IN PDEVICE_OBJECT fdo,
 					 IN PIRP pIrp)
 {
@@ -154,7 +159,7 @@ NTSTATUS HelloWDMPnp(IN PDEVICE_OBJECT fdo,
 		"IRP_MN_QUERY_DEVICE_RELATIONS",
 		"IRP_MN_QUERY_INTERFACE",
 		"IRP_MN_QUERY_CAPABILITIES",
-		"IRP_MN_QUERY_RESOURCESs",
+		"IRP_MN_QUERY_RESOURCES",
 		"IRP_MN_QUERY_RESOURCE_REQUIREMENTS",
 		"IRP_MN_QUERY_DEVICE_TEXT",
 		"IRP_MN_FILTER_RESOURCE_REQUIREMENTS",
@@ -172,12 +177,14 @@ NTSTATUS HelloWDMPnp(IN PDEVICE_OBJECT fdo,
 
 	KdPrint(("PNP Request (%s)\n", fcnname[fcn]));
 #endif
-	
+
 	status = (*fcntab[fcn])(pdx, pIrp);
 
 	KdPrint(("LeaveHelloWDMPnp\n"));
-	return STATUS_SUCCESS;
+	return status;
 }
+
+#pragma PAGEDCODE
 NTSTATUS HelloWDMDispatchRoutine(IN PDEVICE_OBJECT fdo,
 								 IN PIRP pIrp)
 {
@@ -191,6 +198,7 @@ NTSTATUS HelloWDMDispatchRoutine(IN PDEVICE_OBJECT fdo,
 	return STATUS_SUCCESS;
 }
 
+#pragma PAGEDCODE
 void HelloWDMUnload(IN PDRIVER_OBJECT pDriverObject)
 {
 	PAGED_CODE();
@@ -198,6 +206,3 @@ void HelloWDMUnload(IN PDRIVER_OBJECT pDriverObject)
 
 	KdPrint(("Leave HelloWDMUnload\n"));
 }
-
-
-

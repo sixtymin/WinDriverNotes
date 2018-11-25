@@ -395,20 +395,22 @@ NTSTATUS DriverEntry(IN PDRIVER_OBJECT pDriverObject,
 其实头文件`Driver.h`与NT式驱动程序类似，只是它包含的公共头文件变成了WDM驱动专用的`wdm.h`。
 
 ```
-// Driver.cpp
+// Driver.cpp 文件
 #include "Driver.h"
 
+WCHAR *s_wstrDevName = L"\\Device\\MyWDMDevice";
+WCHAR *s_wstrDevSymLinkName = L"\\DosDevices\\HelloWDM";
+
 #pragma INITCODE
-extern "C"
-NTSTATUS DriverEntry(IN PDRIVER_OBJECT pDriverObject,
-					 IN PUNICODE_STRING pRegistryPath)
+extern "C" NTSTATUS DriverEntry(IN PDRIVER_OBJECT pDriverObject,
+								IN PUNICODE_STRING pRegistryPath)
 {
 	KdPrint(("Enter DriverEntry\n"));
 
 	pDriverObject->DriverExtension->AddDevice = HelloWDMAddDevice;
 	pDriverObject->MajorFunction[IRP_MJ_PNP] = HelloWDMPnp;
-	pDriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] =
-	pDriverObject->MajorFunction[IRP_MJ_CREATE] =
+	pDriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = 
+	pDriverObject->MajorFunction[IRP_MJ_CREATE] = 
 	pDriverObject->MajorFunction[IRP_MJ_READ] =
 	pDriverObject->MajorFunction[IRP_MJ_WRITE] = HelloWDMDispatchRoutine;
 	pDriverObject->DriverUnload = HelloWDMUnload;
@@ -417,7 +419,7 @@ NTSTATUS DriverEntry(IN PDRIVER_OBJECT pDriverObject,
 	return STATUS_SUCCESS;
 }
 
-#pragma PAGECODE
+#pragma PAGEDCODE
 NTSTATUS HelloWDMAddDevice(IN PDRIVER_OBJECT pDriverObject,
 						   IN PDEVICE_OBJECT PhysicalDeviceObject)
 {
@@ -427,14 +429,14 @@ NTSTATUS HelloWDMAddDevice(IN PDRIVER_OBJECT pDriverObject,
 	NTSTATUS status;
 	PDEVICE_OBJECT fdo;
 	UNICODE_STRING devName;
-	RtlInitUnicodeString(&devName, L"\\Device\\MyWDMDevice");
+	RtlInitUnicodeString(&devName, s_wstrDevName);
 	status = IoCreateDevice(pDriverObject,
-							sizeof(DEVICE_EXTENSION),
-							&(UNICODE_STRING)devName,
-							FILE_DEVICE_UNKNOWN,
-							0,
-							FALSE,
-							&fdo);
+		sizeof(DEVICE_EXTENSION),
+		&(UNICODE_STRING)devName,
+		FILE_DEVICE_UNKNOWN,
+		0,
+		FALSE,
+		&fdo);
 	if (!NT_SUCCESS(status))
 		return status;
 
@@ -443,7 +445,7 @@ NTSTATUS HelloWDMAddDevice(IN PDRIVER_OBJECT pDriverObject,
 	pdx->NextStackDevice = IoAttachDeviceToDeviceStack(fdo, PhysicalDeviceObject);
 
 	UNICODE_STRING symLinkName;
-	RtlInitUnicodeString(&symLinkName, L"\\DosDevices\\HelloWDM");
+	RtlInitUnicodeString(&symLinkName, s_wstrDevSymLinkName);
 	pdx->ustrDeviceName = devName;
 	pdx->ustrSymLinkName = symLinkName;
 
@@ -461,10 +463,11 @@ NTSTATUS HelloWDMAddDevice(IN PDRIVER_OBJECT pDriverObject,
 	fdo->Flags |= DO_BUFFERED_IO | DO_POWER_PAGABLE;
 	fdo->Flags &= ~ DO_DEVICE_INITIALIZING;
 	KdPrint(("Leave HelloWDMAddDevice\n"));
-	return STATUS_SUCCESS;
+	return status;
 }
 
-#pragma PAGECODE
+
+#pragma PAGEDCODE
 NTSTATUS DefaultPnpHandler(PDEVICE_EXTENSION pdx, PIRP Irp)
 {
 	PAGED_CODE();
@@ -474,7 +477,8 @@ NTSTATUS DefaultPnpHandler(PDEVICE_EXTENSION pdx, PIRP Irp)
 	return IoCallDriver(pdx->NextStackDevice, Irp);
 }
 
-#pragma PAGECODE
+
+#pragma PAGEDCODE
 NTSTATUS HandleRemoveDevice(PDEVICE_EXTENSION pdx, PIRP Irp)
 {
 	PAGED_CODE();
@@ -482,7 +486,7 @@ NTSTATUS HandleRemoveDevice(PDEVICE_EXTENSION pdx, PIRP Irp)
 
 	Irp->IoStatus.Status = STATUS_SUCCESS;
 	NTSTATUS status = DefaultPnpHandler(pdx, Irp);
-	IoDeleteSymbolicLink(&pdx->ustrSymLinkName);
+	IoDeleteSymbolicLink(&(UNICODE_STRING)pdx->ustrSymLinkName);
 
 	if (pdx->NextStackDevice)
 	{
@@ -491,10 +495,11 @@ NTSTATUS HandleRemoveDevice(PDEVICE_EXTENSION pdx, PIRP Irp)
 
 	IoDeleteDevice(pdx->fdo);
 	KdPrint(("Leave HandleRemoveDevice\n"));
-	return status;
+	return STATUS_SUCCESS;
 }
 
-#pragma PAGECODE
+
+#pragma PAGEDCODE
 NTSTATUS HelloWDMPnp(IN PDEVICE_OBJECT fdo,
 					 IN PIRP pIrp)
 {
@@ -539,8 +544,8 @@ NTSTATUS HelloWDMPnp(IN PDEVICE_OBJECT fdo,
 		return status;
 	}
 
-#if DBG
-	static char * fcnname[] =
+#if _DBG
+	static char * fcnname[] = 
 	{
 		"IRP_MN_START_DEVICE",
 		"IRP_MN_QUERY_REMOVE_DEVICE",
@@ -552,7 +557,7 @@ NTSTATUS HelloWDMPnp(IN PDEVICE_OBJECT fdo,
 		"IRP_MN_QUERY_DEVICE_RELATIONS",
 		"IRP_MN_QUERY_INTERFACE",
 		"IRP_MN_QUERY_CAPABILITIES",
-		"IRP_MN_QUERY_RESOURCESs",
+		"IRP_MN_QUERY_RESOURCES",
 		"IRP_MN_QUERY_RESOURCE_REQUIREMENTS",
 		"IRP_MN_QUERY_DEVICE_TEXT",
 		"IRP_MN_FILTER_RESOURCE_REQUIREMENTS",
@@ -574,8 +579,10 @@ NTSTATUS HelloWDMPnp(IN PDEVICE_OBJECT fdo,
 	status = (*fcntab[fcn])(pdx, pIrp);
 
 	KdPrint(("LeaveHelloWDMPnp\n"));
-	return STATUS_SUCCESS;
+	return status;
 }
+
+#pragma PAGEDCODE
 NTSTATUS HelloWDMDispatchRoutine(IN PDEVICE_OBJECT fdo,
 								 IN PIRP pIrp)
 {
@@ -589,10 +596,12 @@ NTSTATUS HelloWDMDispatchRoutine(IN PDEVICE_OBJECT fdo,
 	return STATUS_SUCCESS;
 }
 
+#pragma PAGEDCODE
 void HelloWDMUnload(IN PDRIVER_OBJECT pDriverObject)
 {
 	PAGED_CODE();
 	KdPrint(("Enter HelloWDMUnload\n"));
+
 	KdPrint(("Leave HelloWDMUnload\n"));
 }
 ```
@@ -613,66 +622,299 @@ void HelloWDMUnload(IN PDRIVER_OBJECT pDriverObject)
 
 **WDM驱动安装**
 
-WDM是NT驱动的扩展，主要是针对开发硬件驱动而推出的。随着硬件越来越多，越来越复杂，早期硬件驱动安装都是手动安装，并有人工配置资源，系统中硬件驱动安装就变成了一项专业技能。为了方便硬件驱动程序安装，开发了WDM驱动模型，WDM并不是方便硬件驱动开发，WDM程序比较复杂，理解起来很困难，导致开发WDM驱动比较困难。当然了，如果具有NT式驱动编写基础，WDM硬件驱动也不是特别困难。编写硬件驱动最主要的是了解硬件规格，知道硬件的各种资源，比如内存，寄存器，中断，通过控制内存，寄存器和中断来驱动硬件。
+WDM驱动是NT驱动的扩展，主要是针对开发硬件驱动而推出的。随着硬件越来越多，并且越来越复杂，早期硬件驱动安装都是手动安装，并由人工配置资源，这样系统中硬件驱动安装就变成了一项专业技能。为了方便硬件驱动程序安装，微软开发了WDM驱动模型，WDM并不是为方便硬件驱动开发而退出，WDM程序比较复杂，理解起来相比NT要困难，导致开发WDM驱动难度较大。当然了，如果具有NT式驱动编写基础，WDM硬件驱动也不是特别困难。编写硬件驱动最主要的是了解硬件规格，知道硬件的各种资源，比如内存，寄存器，中断，通过控制内存，寄存器和中断来驱动硬件。
 
-WDM驱动程序安装需要一个INF文件，有两种理解，一种理解是安装文件（`Install File`）或另一种理解是设备信息文件（`Device Information File`）。`Win+R`中输入`inf`就可以定位到系统盘的`Windows\INF`目录，它其中包含了系统安装的所有WDM驱动的INF文件。INF文件格式类似`ini`文件，分区段，每个区段中内容以`key=words`等形式的存在。下面简单介绍INF文件的编写。
+WDM驱动程序安装需要一个INF文件，设备信息文件（`Device INformation File`）。每一个驱动包中必须博阿含一个INF文件，系统安装组件在安装设备时需要读取它，INF文件并非安装脚本，它是一个ASCII或Unicode文本文件，提供了设备和驱动信息，包括驱动文件，注册表条目，设备ID，catalog文件和版本信息等。不仅仅是在设备或驱动安装时需要INF，当用户请求驱动更新时牙需要INF文件。INF文件的内容和格式依赖于设备安装类别，设备安装类别是为了帮助设备安装，具有相同的安装和配置方式的设备被分为相同类别，设备安装类定义了类安装器和类辅助安装器，微软定义了大部分设备的安装类别，每一个类别都有GUID与之关联，具有`GUID_DEVCLASS_XXX`形式；如果设备不再这些系统提供类别内，可以自定义设备类别，具体内容可参考WDK中inf相关帮助文档。
 
-INF即是配置文件也是脚本文件，其中包含了部分可执行的指令，有默认的程序可以解析它们。
-
-https://blog.csdn.net/Awey_001/article/details/6094602
-http://www.cppblog.com/killsound/archive/2007/01/25/17970.html
-
-
-
-组成：
-
-Sections
-Keyword
-Value
-
-例如 Version节
-
+`Win+R`中输入`inf`就可以定位到系统盘的`Windows\INF`目录，其中包含了系统安装的所有WDM驱动的INF文件。INF文件格式类似`ini`文件，分节区，每个节区中内容以`key=words`等形式的存在。下面简单介绍INF文件中常用内容。INF是由`Sections`，`Keyword`，`Value`等形式组成，如下为`Version`节的一个示例：
+```
 [version]
 	Sinature="$Chicago$
     LayoutFile=filename.inf
+```
 
-常见节区：
+在INF中系统定义的几个常见节区有如下几个：
 
-[Version]  基本的版本信息
-[DefaultInstall] 默认执行的节区，包含了指向其他节的指针，这些节用于指定文件的拷贝和删除，注册表更新，.ini文件更新等等
-[DestinationDirs] 指定了节区中描述文件拷贝，删除或重命名的文件在磁盘上的位置。
+```
+[Version]          基本的版本信息，INF必须包含的节区，其中还需要有效的Signature条目
+[SourceDisksNames] 如果文件包含[SourceDisksFiles]，则必须包含本节区，列举包含安装文件的磁盘名字
+[SourceDisksFiles] 标识待安装文件在分发媒介上的位置，可以是当前磁盘
+[ClassInstall32]   初始化设备安装类，在安装INF文件中必须包含。如果类别属于系统预定义的类别，则不需要该节区。
+[ClassInstall32.Services] 用于添加服务，控制如何和何时将服务加载。
+[DestinationDirs]  指定了节区中描述文件拷贝，删除或重命名的文件在磁盘上的位置。
+[Manufacturer]     它基本上是一个内容表，每一个条目就是指定了Models节区，在这些Models节区中才有真正的安装节区
+[DefaultInstall]   默认执行的节区，包含了指向其他节的指针，用户右键选择`Install`时默认执行的节区
+[Strings]          描述上面节中用到的字符串，本地化的字符串
+```
 
-[SourceDisksNames] 列举包含文件的磁盘名字
+通常，每个生产厂商的信息位于INF的Models节区，该节区中指向的DDInstall节区包含了特定模型的细节信息。Models节区有如下的格式：
 
-[SourceDisksFiles] 列举每个文件所在的磁盘
+```
+[models-section-name]
+	device-description=install-section-name[,hw-id][,compatible-id...]
+	[device-description=install-section-name[,hw-id][,compatible-id]...] ...
+```
 
-[Strings] 描述上面节中用到的字符串，本地化的字符串
+每一行代表一个设备生产商信息，而每一个设备商信息中可以指定一种设备ID，还可附加多个可以用同一驱动控制的额外的兼容设备ID。每一个`models-section-name`都需要在`[Manufacturer]`节中列举出来。在Win2003之后，Manufacturer节必须附带`ntia64`，`.ntamd64`等平台扩展。
 
-常见操作：
+`device-description`条目标识被安装的设备，可以以任何可打印字符串或Token（%strkey%）形式给出；`install-section-name`指定未修饰的INF安装节区名字，即DDInstall节。`hw-id`指定供应商定义的硬件ID字符串，用于标识一个设备。它用于PnP管理器匹配设备的INF文件。这个字符串有如下的一些格式，`enumerator\enumerator-specific-device-id`，比如`PCI\VEN_1011&DEV_002&SUBSYS_00000000&REV_02`；`*enumerator-specific-device-id`，比如`*PNP0F01`表示微软串口鼠标，或者`SERENUM\PNP0F01`；`device-class-specific-ID`等形式。
 
-LogConfig  Log日志文件配置
-Copyfiles 复制文件
-Renfiles  文件改名
-Delfiles  删除文件
-UpdateInis 更新Ini文件
+WDK文档中给出了编写INF的建议，为驱动编写INF文件最好的方式是修改WDK中提供的例子中的INF文件，大部分WDK例子驱动中包含了INF文件。写完的INF文件，可以使用`ChkINF`程序（在WDK的开始菜单中有选项）进行校验，简单是否有错误。
+
+INF中常见的集中操作如下所示：
+
+```
+LogConfig       Log日志文件配置
+Copyfiles       复制文件
+Renfiles        文件改名
+Delfiles        删除文件
+UpdateInis      更新Ini文件
 UpdateIniFields 更新Ini字段
-AddReg  添加注册项
-DelReg 删除注册项
-Ini2Reg Ini文件转换为Reg文件
-ADDSERVICE 添加服务
+AddReg          添加注册项
+DelReg          删除注册项
+Ini2Reg         Ini文件转换为Reg文件
+ADDSERVICE      添加服务
+```
 
+INF文件编写有一些规则如下，用于修改INF文件时遵守，防止出现错误。
 
+1. INF文件是分节的，每一个INF由许多节组成，节名用方括号括起来，节名有些为系统定义，有些为自定义，每个节名最长255，节与节之间没有先后顺序区别。对于同一个INF文件中如果出现两个同样的节名，则系统会自动将两个节名下面内容合并到一起。
+2. 在节与节之间的内容叫条目，每一个节又是由许多的条目组成，每一个条目都是`Key=Value`形式组成，Value有多个值时用逗号（英文形式）分隔。
+3. INF文件对大小写不敏感。
+4. “;”号后面的内容为注释。
+5. 如果一个条目内容过多，一行无法写完，可以使用连行符号`\`写为多行。
 
-http://b.edu.51cto.com/fxcl/course/course-detail?courseId=15379
+如下给出一个安装WDM驱动的详细的INF文件内容，以及对应注释：
+
+```
+;INF是Device INformation File英文缩写，微软公司为硬件设备制造商发布其驱动程序推出的一种文件格式，
+;INF文件中包含了硬件设备的信息或脚本以控制硬件操作。INF文件中指明了硬件驱动该如何安装到系统中，
+;源文件在哪里，安装到那个文件夹中，怎样在注册表中加入驱动相关信息等。
+;
+;   有一种使用[DefaultInstall]节区的INF文件，它默认使用`%SystemRoot%\System32\InfDefaultInstall.exe`程序
+;进行解析，它可以用于选中INF文件，右键->"安装"这种方式调用前面的程序解析INF，执行一些操作
+;   对于WDM驱动安装不能使用这种节区，要使用[ClassInstall32]安装类别信息，并安装相应的驱动程序。
+;
+;---------------------版本信息-------------------------------
+[Version]
+Signature="$CHICAGO$"		; INF文件签名，一般为$Windows NT$ 或 $CHICAGO$，用于INF合法性判断
+Provider="Zhangfan_Device"	; INF文件的供应商
+DriverVer=11/01/2007,3,0,0,0	; 格式为 月/日/年[,x,y,v,z],点分的四位版本号（同PE的版本号形式）
+
+; 设置设备类别。如果是一个标准类别，使用标准类的名称和GUID
+; 否则创建一个自定义的类别名称，并自定义它的GUID
+Class=ZhangfanDevice        ; 驱动程序所属的类别
+ClassGUID={83C04128-CFD4-485e-86CB-BACE0ABFBF4E}  ; 设备类的GUID，与Class字段一一对应
+
+;LayoutFile=XXXX            ; 仅供操作系统内部提供的INF文件使用
+;CatalogFile=XXXX           ; 指明数字签名文件的文件名，其扩展名为.cat
+
+;---------------------安装磁盘节--------------------------------
+; 这些节去顶安装盘和安装文件的路径
+; 这些路径可以根据需要进行修改
+[SourceDisksNames]
+; 指明设备驱动程序所在的磁盘或CD-ROM
+; Win2000之后的格式 diskid=disk-description[,[tag-or-cab-file][,unused,path]]
+; 其中diskid指出磁盘驱动器编号，为正整型数，通常从1开始，不能重复
+; disk-description 表示磁盘描述信息，通常为字符串或token(%strkey%)。用于描述diskid标识磁盘的作用
+; tag-or-cab-file 可选值，指出磁盘标签文件的文件名，tag文件用于校验安装磁盘。
+; unused保留未用，path指出驱动程序所在路径，[]表示可选参数
+1 = "HelloWDM",Disk1,,
+
+[SourceDisksFiles]
+; 指明设备驱动程序的文件名
+; filename=diskid[,[subdir][,size]]
+; filename 指出驱动程序的文件名，diskid指出磁盘驱动器编号，subdir指出文件在磁盘上的路径
+; size 指出该文件未经过压缩时的大小，单位为字节
+HelloWDM.sys = 1,,
+
+;-----------------ClassInstall1/ClassInstall32 Section---------------
+; 如果使用标准类别，下面这些不需要指定
+
+; 9x Style
+[ClassInstall]
+Addreg=Class_AddReg
+
+; NT Style
+[ClassInstall32]
+Addreg=Class_AddReg
+
+[Class_AddReg]
+; 添加注册表键值
+; reg-root, [subkey], [value-entry-name], [flags], [value]
+
+; reg-root 根键 HKR代表驱动所用注册表子目录中的根
+
+; subkey   子健名称
+
+; value-entry-name 条目名称
+
+; flags 可选十六进制值，定义value-entry的类型
+
+; value 对应条目的值
+HKR,,,,%DeviceClassName%
+HKR,,Icon,,"-5"
+
+;--------------------目标文件节--------------------------------
+[DestinationDirs]
+; 指明INF文件和设备驱动程序的目标目录，INF中具有CopyFiles，DelFiles，RenFiles等指令时必须包含该节
+; DefaultDestDir=dirid[,subdir]
+; file-list-section=dirid[,subdir]
+; DefaultDestDir是一个项名称，代表文件复制，删除重命名等操作目标目录
+; file-list-section指出CopyFiles,DelFiles,RenFiles指令所引用的节
+; dirid指出目标目录值，subdir指出dirid目录下的子目录
+; dirid:
+; 10 Windows目录，%windir% 11 系统目录%windir%/system32
+; 12 驱动目录%windir%/system32/drivers
+; 17 INF目录   18 帮助目录  20 字体目录  24 应用程序目录
+; 50 %windir%/system   54  ntldr.exe和osloader.exe所在目录
+YouMark_Files_Driver = 10,System32\Drivers
+
+;--------------------制造商节----------------------------------
+[Manufacturer]
+; 指明供应商以及Models节的名称 %strkey%=models-section-name
+; strkey 代表设备制造的名字，String节中定义，
+; models-section-name 指出Models节名称
+%MfgName%=Mfg0
+
+[Mfg0]
+; Models节指明Install/DDInstall节名称，设备硬件ID和兼容ID信息
+; device-description=install-section-name,hw-id[,compatible-id]
+; device-description 指出设备的表述星系，可以为字符串，也可以用%strkey%
+; install-section-name指出Install/DDInstall节名称，hw-id指出硬件设备ID
+; compatible-id指出设备的兼容ID
+; 在这里描述PCI的VendorID和ProductID
+; PCI\VEN_aaaa&DEV_bbb&SUBSYS_CCCCCCCC&REV_dd
+; 改成自己的ID
+%DeviceDesc%=YouMark_DDI,PCI\VEN_9999&DEV_9999
+
+;----------------------DDInstall Sections-----------------------
+; 如果在DDInstall中的字符串超过19，可能会导致问题
+
+[YouMark_DDI]
+CopyFiles=YouMark_Files_Driver
+AddReg=YouMark_9x_AddReg
+
+[YouMark_9x_AddReg]
+HKR,,DevLoader,,*ntkern
+HKR,,NTMPDriver,,HelloWDM.sys
+HKR, "Parameters", "BreakOnEntry", 0x00010001, 0
+
+;--------------------Windows NT------------------------
+[YouMark_DDI.NT]
+; 指明需要复制文件，注册表添加信息，节名称由Models节指定，如下为包含的常用项
+; CopyFiles 指明需要复制的文件 CopyFiles=@filename|file-list-section[,file-list-section]...
+; AddReg 指明添加注册表内容  AddReg=add-register-section[,add-register-section,]...
+; Include 安装时需要的其他的INF文件 Include=filename.inf[,filename2.inf]...
+; Needs 安装时需要的其他的INF文件 Needs=filename.inf[,filename2.inf]...
+; Delfiles 指明需要删除文件
+; RenFiles 指明要重命名文件
+; DelReg指明需要删除注册表
+CopyFiles=YouMark_Files_Driver
+AddReg=YouMark_NT_AddReg
+
+[YouMark_DDI.NT.Services]
+; 指明驱动程序安装的详细信息，用于Win2000之后，节名为[install-section-name.Services]
+; install-section-name 由 Models节指定
+; AddService 控制驱动程序的安装过程 AddService=ServiceName,[flags],service-install-section,
+; [,event-log-install-section[,[EventLogType][,EventName]]]...
+; DelService 删除一个或多个已有驱动程序 DelService=ServiceName[,[flags][,[EventLogType][,EventName]]]...
+; Include 指明安装所需要的其他INF文件
+; Needs指明安装所需的特定INF文件
+Addservice=HelloWDM,0x00000002,YouMark_AddService
+
+[YouMark_AddService]
+DisplayName=%SvcDesc%
+ServiceType=1			; SERVICE_KERNEL_DRIVER
+StartType = 3			; SERVICE_DEMAND_START
+ErrorControl = 1        ; SERVICE_ERROR_NORMAL
+ServiceBinary = %10%\System32\Drivers\HelloWDM.sys
+
+[YouMark_NT_AddReg]
+; 添加注册表内容 reg-root,[subkey],[value-entry-name],[flags],[value]
+; reg-root 包含 HKCR（HKEY_CLASSES_ROOT），HKCU（HKEY_CURRENT_USER），HKLM（HKEY_LOCAL_MACHINE）
+; HKU（HKEY_USER），HKR（被安装设备的注册表键）
+; subkey 指出reg-root下的子目录或子健
+; value-entry-name 指出要增加的注册表值
+; flags 指出注册表的一些处理方法
+; value 指出新增注册表值的数据
+HKLM,"System\CurrentControlSet\Services\HelloWDM\Parameter","BreakOnEntry", 0x00010001,0
+
+;-------------------文件节-----------------------------
+[YouMark_Files_Driver]
+HelloWDM.sys
+
+;-------------------字符串节---------------------------
+[Strings]
+; 指明一些字符串，包含项格式为strkey=["]some string["]
+ProviderName="Zhangfan"
+MfgName="Zhangfan Soft"
+DeviceDesc="Hello World WDM!"
+DeviceClassName="Zhangfan_Device"
+SvcDesc="Zhangfan"
+```
+
+常见的设备类别以及GUId值如下表所示：
+
+| Class   |   ClassGuid                          |   说明      |
+|---------|--------------------------------------|-------------|
+| 1394    | 6BDD1FC1-810F-11D0-BEC7-08002BE2092F | 1394主控制器 |
+| CDROM   | 4D36E965-E325-11CE-BFC1-08002BE10318 | CD-ROM驱动器 |
+| DiskDrive|4D36E967-E325-11CE-BFC1-08002BE10318 | 磁盘驱动器    |
+| Display | 4D36E968-E325-11CE-BFC1-08002BE10318 | 显示适配器    |
+| FDC     | 4D36E969-E325-11CE-BFC1-08002BE10318 | 软盘驱动器    |
+| HDC     | 4D36E96A-E325-11CE-BFC1-08002BE10318 | 硬盘控制器    |
+| HIDClass| 745a17a0-74d3-11d0-b6fe-00a0c90f57da | 人机接口设备  |
+| Keyboard| 4D36E96B-E325-11CE-BFC1-08002BE10318 | 键盘         |
+| Modem   | 4d36e96c-e325-11ce-bfc1-08002be10318 | 调制解调器    |
+| Monitor | 4d36e96e-e325-11ce-bfc1-08002be10318 | 监视器       |
+| Mouse   | 4d36e96f-e325-11ce-bfc1-08002be10318 | 鼠标         |
+| Net     | 4d36e972-e325-11ce-bfc1-08002be10318 | 网络适配器    |
+| Ports   | 4d36e978-e325-11ce-bfc1-08002be10318 | 端口（COM）  |
+| Printer | 4d36e979-e325-11ce-bfc1-08002be10318 | 打印机       |
+| System  | 4d36e97d-e325-11ce-bfc1-08002be10318 | 系统设备      |
+| TapeDrive|6D807884-7D21-11CF-801C-08002BE10318 | 磁带驱动器    |
+| USB     | 36FC9E60-C465-11CF-8056-444553540000 | USB         |
+
+现在INF编写完成，在安装驱动过程中，首先检查`[Version]`节中的签名信息，如果签名信息完整，则查找安装节，对于WDM驱动则是找类安装节，即`[ClassInstall32]`，这个节中会指定安装驱动中需要添加的一些信息。指明了类信息后就需要指定设备的制造商，即`[Manuafacturer]`节，其下每一行就描述了一个设备信息，其中包括安装节，设备ID号，也可以添加兼容设备的ID；这样当物理设备接入后，就可以获取设备ID，根据设备ID找到它对应的INF文件，从设备制造商节中的安装节就可以获取对应的驱动的安装节了，进一步安装硬件的驱动即可。
 
 **WDM驱动安装**
 
+安装WDM驱动需要INF文件，上面一小节介绍了INF的编写。有了INF文件，可以使用系统的设备管理器来安装WDM驱动程序。首先从我的电脑右键快捷方式中打开“管理”程序，然后在设备管理器中`XX-PC`上右键，选择“添加过时硬件”，如图8所示。
 
-加载WDM驱动可以使用`EzDriverInstaller`程序。
+![图8.添加过时硬件](2018-11-15-First-Driver-Program-Install-WDM-Driver.jpg)
 
+然后选择从`安装我手动从列表选择的硬件（高级）（M）`，如图9所示，然后继续下一步。
+
+![图9.手动选择安装驱动](2018-11-15-First-Driver-Program-Manual-Select-Hardware-Driver.jpg)
+
+选择`从磁盘安装（H）...`，然后弹窗中选择INF文件路径确定即可，持续下一步。
+
+![图10.选择INF文件路径](2018-11-15-First-Driver-Program-Install-From_Disk-Select-INF-File.jpg)
+
+在安装过程中会弹窗提示驱动程序无法验证发布者，如图11所示，选择`使用安装此驱动程序软件(I)`即可。
+
+![图11.选择始终安装驱动程序软件](2018-11-15-First-Driver-Program-Win-Cannot-Valid-Driver.jpg)
+
+WDM驱动程序也可以使用工具进行安装，使用`EzDriverInstaller`程序安装WDM驱动界面如下图12中所示，打开INF文件，然后`Add New Device`就可以自动安装上WDM驱动了，这样就不需要从设备管理器中一步一步点击安装了，省事！
 
 **WDM驱动运行**
 
+使用`EzDriverInstaller`安装完后的效果如图12所示。其中设备类为`Zhangfan_Device`即INF中的`Class`字段内容，依次还可以看到其他的内容与INF中各节的对应信息。
+
+![图12.WDM驱动程序安装完成后截图](2018-11-15-First-Driver-Program-WDM-Install-Success-By-EX.jpg)
+
+比如驱动信息中具有驱动版本（其中带有日期），还有就是驱动提供商等信息，都列举在如下图13中的驱动程序一栏中。
+
+![图13.WDM驱动程序信息截图](2018-11-15-First-Driver-Program-WMD-Install-DriverInformation.jpg)
+
+INF信息最终都会进入注册表进行保存，如下几个子目录中几乎保存了INF中驱动相关的信息，如下图14，15，16。在每个图中下方都有它们所在子目录的完整路径。
+
+![图14.HKLM-Device信息](2018-11-15-First-Driver-Program-HKLM-CurrentContrlSet-Device-Info.jpg)
+
+![图15.HKLM-Class GUID键值](2018-11-15-First-Driver-Program-Contrl-Class-GUID-Info.jpg)
+
+![图16.HKLM-服务注册表目录下HelloWDM服务信息](2018-11-15-First-Driver-Program-HKLM-Service-HelloWDM.jpg)
 
 ###WDF驱动程序###
 
@@ -687,5 +929,5 @@ http://b.edu.51cto.com/fxcl/course/course-detail?courseId=15379
 
 1. 《Windows驱动开发技术详解》
 2. [VS2013 WDK8.1驱动开发1](http://www.coderjie.com/blog/91a5722cdd2d11e6841d00163e0c0e36)
-
+3. [Windows驱动inf文件详解](https://blog.csdn.net/u011191259/article/details/41963403)
 By Andy@2018-11-15 09:48:52
