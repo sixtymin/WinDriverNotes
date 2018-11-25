@@ -331,6 +331,14 @@ BOOL DeleteService(SC_HANDLE hService); // handle to service
 
 **运行NT驱动**
 
+NT式驱动虽然作为一个服务进行加载，其实它是由`I/O`管理器负责加载的，即`I/O`管理器创建驱动对象，然后用驱动对象做参数调用驱动的入口函数`DriverEntry`。NT驱动在`DriverEntry`函数中创建设备对象，同时还会给驱动对象设置分发对象，用于响应应用层对驱动的请求。
+
+驱动的设备对象由驱动对象结构体中的`DeivceObject`字段指向，一个驱动可以创建多个设备对象，设备对象之间由设备对象结构体的`NextDevice`字段形成链表，这样形成的是设备对象的水平结构。设备对象创建时都设置名字，以`\Device\XXXXXX`形式的命名，而如果要在应用层访问驱动，无法直接访问设备名，需要给它设置一个符号链接，符号链接都是以`\??\YYYY`或`\DosDevices\YYYY`形似命名。在用户层则需要以`\\.\YYYY`形式来打开驱动的链接。
+
+当用户层操作驱动时，比如读取驱动内容，操作调用到内核后，由`I/O`管理器将操作转化为IRP包，IRP包会被分发到驱动的分发函数中进行处理。
+
+当驱动卸载时，调用驱动的卸载函数，在卸载函数中删除符号链接，删除设备对象。
+
 使用前面说的`InstDrv.exe`安装驱动，并运行起来后，系统中有如下一些信息可以体现驱动存在。
 
 ![图6 注册表中NT驱动信息](2018-11-15-First-Driver-Program-NT-Register-infomations.jpg)
@@ -900,21 +908,27 @@ WDM驱动程序也可以使用工具进行安装，使用`EzDriverInstaller`程�
 
 **WDM驱动运行**
 
-使用`EzDriverInstaller`安装完后的效果如图12所示。其中设备类为`Zhangfan_Device`即INF中的`Class`字段内容，依次还可以看到其他的内容与INF中各节的对应信息。
+WDM驱动程序与NT类似，不同点在于驱动扩展中的`AddDevice`函数。WDM驱动支持即插即用，需要提供一个`AddDevice`函数，在设备接入系统时由`I/O`管理器调用该函数创建硬件的设备对象。
 
-![图12.WDM驱动程序安装完成后截图](2018-11-15-First-Driver-Program-WDM-Install-Success-By-EX.jpg)
+在WDM中不同于NT的是需要将WDM式的功能驱动挂接到物理设备对象。这样从应用层到底层硬件之间就形成了`硬件->物理设备对象->功能设备对象->应用层`，这样就形成了上下的垂直结构。如下图11所示，加上上下过滤驱动可以形成一层完整的WDM驱动垂直结构。
 
-比如驱动信息中具有驱动版本（其中带有日期），还有就是驱动提供商等信息，都列举在如下图13中的驱动程序一栏中。
+![图12.WDM驱动程序垂直结构](2018-11-15-First-Driver-Program-WDM-Physical-Driver-Layer.png)
 
-![图13.WDM驱动程序信息截图](2018-11-15-First-Driver-Program-WMD-Install-DriverInformation.jpg)
+使用`EzDriverInstaller`安装完后的效果如图13所示。其中设备类为`Zhangfan_Device`即INF中的`Class`字段内容，依次还可以看到其他的内容与INF中各节的对应信息。
 
-INF信息最终都会进入注册表进行保存，如下几个子目录中几乎保存了INF中驱动相关的信息，如下图14，15，16。在每个图中下方都有它们所在子目录的完整路径。
+![图13.WDM驱动程序安装完成后截图](2018-11-15-First-Driver-Program-WDM-Install-Success-By-EX.jpg)
 
-![图14.HKLM-Device信息](2018-11-15-First-Driver-Program-HKLM-CurrentContrlSet-Device-Info.jpg)
+比如驱动信息中具有驱动版本（其中带有日期），还有就是驱动提供商等信息，都列举在如下图14中的驱动程序一栏中。
 
-![图15.HKLM-Class GUID键值](2018-11-15-First-Driver-Program-Contrl-Class-GUID-Info.jpg)
+![图14.WDM驱动程序信息截图](2018-11-15-First-Driver-Program-WMD-Install-DriverInformation.jpg)
 
-![图16.HKLM-服务注册表目录下HelloWDM服务信息](2018-11-15-First-Driver-Program-HKLM-Service-HelloWDM.jpg)
+INF信息最终都会进入注册表进行保存，如下几个子目录中几乎保存了INF中驱动相关的信息，如下图15，16，17。在每个图中下方都有它们所在子目录的完整路径。
+
+![图15.HKLM-Device信息](2018-11-15-First-Driver-Program-HKLM-CurrentContrlSet-Device-Info.jpg)
+
+![图16.HKLM-Class GUID键值](2018-11-15-First-Driver-Program-Contrl-Class-GUID-Info.jpg)
+
+![图17.HKLM-服务注册表目录下HelloWDM服务信息](2018-11-15-First-Driver-Program-HKLM-Service-HelloWDM.jpg)
 
 ###WDF驱动程序###
 
@@ -923,7 +937,6 @@ INF信息最终都会进入注册表进行保存，如下几个子目录中几�
 ###驱动调试###
 
 如果要调试驱动，则需要在驱动入口处设置断点。使用内联汇编`__asm{int 3;}`可以实现在代码中加入断点。要实现X86和X64统一，最好使用`KdBreakPoint()`来在代码中设置断点，这具有通用性（X64不支持内联汇编）。
-
 
 **参考文章**
 
