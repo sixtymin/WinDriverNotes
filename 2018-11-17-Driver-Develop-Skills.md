@@ -16,6 +16,6 @@ WDK安装过程中会安装驱动编程的文档，这是微软提供的官方�
 
 ![图2.搜索导出函数](2018-11-17-Driver-Develop-Skills-IDA-Find-Export-Functions.jpg)
 
-
+###内核支持函数搜索###
 
 By Andy@2018-11-17 12:14:32
