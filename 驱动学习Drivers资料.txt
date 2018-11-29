@@ -31,21 +31,8 @@ http://edu.51cto.com/course/15379.html
 张佩 驱动讲稿  视频
 https://i.youku.com/i/UMzQzODg3MzU2/videos?spm=a2hzp.8244740.0.0
 
-梦之未来 不清晰
-https://i.youku.com/i/UMTMxNjcwNDk3Mg==?spm=a2h0j.11185381.module_basic_sub.A
-
-基础视频
-https://i.youku.com/i/UMzE4MTI5NTA2OA==/videos?spm=a2hzp.8253876.0.0
-
 // 基础视频
 https://www.bilibili.com/video/av26193169/
-
-X64位零基础驱动编程 视频
-https://i.youku.com/i/UMTYxNjAzNDI3Mg==/playlists?spm=a2hzp.8253869.0.0
-
-WDM 即插即用式驱动编写
-http://b.edu.51cto.com/fxcl/course/course-detail?courseId=15379
-
 
 ---------------------------
 // 微软文档
@@ -70,6 +57,10 @@ http://www.yiiyee.cn/Blog/
 https://blog.csdn.net/Sagittarius_Warrior/article/category/5977339/2
 https://blog.csdn.net/shevacoming/article/category/1143898/4
 https://bbs.pediy.com/user-353841-1.htm
+
+
+X64位零基础驱动编程 视频
+https://i.youku.com/i/UMTYxNjAzNDI3Mg==/playlists?spm=a2hzp.8253869.0.0
 
 
 微软github驱动框架 WDF
