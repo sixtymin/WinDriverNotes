@@ -1,0 +1,88 @@
+﻿;---------------------版本信息-------------------------------
+[Version]
+Signature="$CHICAGO$"		; INF文件签名，一般为$Windows NT$ 或 $CHICAGO$，用于INF合法性判断
+Provider="Zhangfan_Device"	; INF文件的供应商
+DriverVer=11/01/2007,3,0,0,0	; 格式为 月/日/年[,x,y,v,z],点分的四位版本号（同PE的版本号形式）
+
+; 设置设备类别。如果是一个标准类别，使用标准类的名称和GUID
+; 否则创建一个自定义的类别名称，并自定义它的GUID
+Class=ZhangfanDevice        ; 驱动程序所属的类别
+ClassGUID={83C04128-CFD4-485e-86CB-BACE0ABFBF4E}  ; 设备类的GUID，与Class字段一一对应
+
+;---------------------安装磁盘节--------------------------------
+[SourceDisksNames]
+1 = "HelloWDM",Disk1,,
+
+[SourceDisksFiles]
+HelloWDM.sys = 1,,
+
+;-----------------ClassInstall1/ClassInstall32 Section---------------
+; 如果使用标准类别，下面这些不需要指定
+
+; 9x Style
+[ClassInstall]
+Addreg=Class_AddReg
+
+; NT Style
+[ClassInstall32]
+Addreg=Class_AddReg
+
+[Class_AddReg]
+HKR,,,,%DeviceClassName%
+HKR,,Icon,,"-5"
+
+;--------------------目标文件节--------------------------------
+[DestinationDirs]
+YouMark_Files_Driver = 10,System32\Drivers
+
+;--------------------制造商节----------------------------------
+[Manufacturer]
+%MfgName%=Mfg0
+
+[Mfg0]
+; 在这里描述PCI的VendorID和ProductID
+; PCI\VEN_aaaa&DEV_bbb&SUBSYS_CCCCCCCC&REV_dd
+; 改成自己的ID
+%DeviceDesc%=YouMark_DDI,PCI\VEN_9999&DEV_9999
+
+;----------------------DDInstall Sections-----------------------
+; 如果在DDInstall中的字符串超过19，可能会导致问题
+[YouMark_DDI]
+CopyFiles=YouMark_Files_Driver
+AddReg=YouMark_9x_AddReg
+
+[YouMark_9x_AddReg]
+HKR,,DevLoader,,*ntkern
+HKR,,NTMPDriver,,HelloWDM.sys
+HKR, "Parameters", "BreakOnEntry", 0x00010001, 0
+
+;--------------------Windows NT------------------------
+[YouMark_DDI.NT]
+CopyFiles=YouMark_Files_Driver
+AddReg=YouMark_NT_AddReg
+
+[YouMark_DDI.NT.Services]
+Addservice=HelloWDM,0x00000002,YouMark_AddService
+
+[YouMark_AddService]
+DisplayName=%SvcDesc%
+ServiceType=1			; SERVICE_KERNEL_DRIVER
+StartType = 3			; SERVICE_DEMAND_START
+ErrorControl = 1        ; SERVICE_ERROR_NORMAL
+ServiceBinary = %10%\System32\Drivers\HelloWDM.sys
+
+[YouMark_NT_AddReg]
+HKLM,"System\CurrentControlSet\Services\HelloWDM\Parameter","BreakOnEntry", 0x00010001,0
+
+;-------------------文件节-----------------------------
+[YouMark_Files_Driver]
+HelloWDM.sys
+
+;-------------------字符串节---------------------------
+[Strings]
+; 指明一些字符串，包含项格式为strkey=["]some string["]
+ProviderName="Zhangfan"
+MfgName="Zhangfan Soft"
+DeviceDesc="Hello World WDM!"
+DeviceClassName="Zhangfan_Device"
+SvcDesc="Zhangfan"

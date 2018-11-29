@@ -7,7 +7,7 @@ WCHAR *s_wstrDevSymLinkName = L"\\DosDevices\\HelloWDM";
 extern "C" NTSTATUS DriverEntry(IN PDRIVER_OBJECT pDriverObject,
 								IN PUNICODE_STRING pRegistryPath)
 {
-	KdPrint(("Enter DriverEntry\n"));
+	KdPrint(("Enter DriverEntry: Object=0x%08X\n", pDriverObject));
 
 	pDriverObject->DriverExtension->AddDevice = HelloWDMAddDevice;
 	pDriverObject->MajorFunction[IRP_MJ_PNP] = HelloWDMPnp;
@@ -19,6 +19,26 @@ extern "C" NTSTATUS DriverEntry(IN PDRIVER_OBJECT pDriverObject,
 
 	KdPrint(("Leave DriverEntry\n"));
 	return STATUS_SUCCESS;
+}
+
+#pragma PAGEDCODE
+void DumpDeviceStack(IN PDEVICE_OBJECT pdo)
+{
+	KdPrint(("-------------------------------------\n"));
+	KdPrint(("Begin Dump device stack ...\n"));
+	
+	PDEVICE_OBJECT pDevice = pdo;
+	int i = 0;
+	for ( ; pDevice != NULL; pDevice = pDevice->AttachedDevice)
+	{
+		// Print Info
+		KdPrint(("The %d device in device stack\n", i++));
+		KdPrint(("Device AttachedDevice: 0x%08X\n", pDevice->AttachedDevice));
+		KdPrint(("Device NextDevice: 0x%08X\n", pDevice->NextDevice));
+		KdPrint(("Device StackSize: %d\n", pDevice->StackSize));
+		KdPrint(("Device's DriverObject: 0x%08X\n", pDevice->DriverObject));
+	}
+	KdPrint(("-------------------------------------\n"));
 }
 
 #pragma PAGEDCODE
@@ -64,6 +84,9 @@ NTSTATUS HelloWDMAddDevice(IN PDRIVER_OBJECT pDriverObject,
 
 	fdo->Flags |= DO_BUFFERED_IO | DO_POWER_PAGABLE;
 	fdo->Flags &= ~ DO_DEVICE_INITIALIZING;
+
+	DumpDeviceStack(fdo);
+
 	KdPrint(("Leave HelloWDMAddDevice\n"));
 	return status;
 }
