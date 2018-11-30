@@ -188,7 +188,9 @@ typedef struct _DRIVER_OBJECT *PDRIVER_OBJECT;
 
 在入口函数中调用了`CreateDevice`创建了设备对象，并且向`I/O`管理器注册了一些回调函数，这些回调函数由程序员定义，操作系统调用。比如当驱动卸载时会调用驱动对象中的`DriverUnload`成员所指向函数，即我们这里的`HelloDDKUnload`。
 
-`CreateDevice`是一个辅助函数，用于创建设备驱动。`IoCreateDevice`函数创建设备对象，设备类型为`FILE_DEVICE_UNKNOWN`，这种设备为独占设备，只能被一个应用程序使用。下面在调用`IoCreateSymbolicLink`用于创建设备对象的符号链接，用于应用程序打开驱动时用。
+`CreateDevice`是一个辅助函数，用于创建设备驱动。`IoCreateDevice`函数创建设备对象，设备类型为`FILE_DEVICE_UNKNOWN`，这种设备为独占设备，只能被一个应用程序使用。下面在调用`IoCreateSymbolicLink`用于创建设备对象的符号链接，用于让应用程序打开驱动时用。
+
+最后`DriverEntry`返回了`CreateDevice`的返回值。其实这个返回值还是很重要的，如果`DriverEntry`返回`STATUS_SUCCESS`则表示入口成功，驱动可以正常加载；如果它返回非`STATUS_SUCCESS`值，比如`STATUS_UNSUCCESSFUL`，说明驱动初始化失败了，这个时候驱动程序就会被系统卸载掉，不会映射到内存空间了。如果在内存中找不到驱动模块时，一定要考虑一下是不是这个地方出现了问题。其实这个机制和DLL很类似，如果DLL的入口`DllMain`函数返回`FALSE`，那么DLL就不会被映射到进程的地址空间了。
 
 `HelloDDKUnload`函数为卸载驱动例程，当驱动程序被卸载时，由`I/O`管理器负责调用此回调函数。该函数遍历此驱动程序中创建的所有设备对象，驱动对象的`DeviceObject`成员中保存了创建的第一个设备对象地址，而每一个设备对象的`NextDevice`域记录了该驱动创建的下一个设备对象的地址，这样就形成了一个链表。卸载驱动函数就是遍历链表，删除所有设备对象及其符号链接。
 
@@ -936,7 +938,33 @@ INF信息最终都会进入注册表进行保存，如下几个子目录中几�
 
 ###驱动调试###
 
+**断点设置**
+
 如果要调试驱动，则需要在驱动入口处设置断点。使用内联汇编`__asm{int 3;}`可以实现在代码中加入断点。要实现X86和X64统一，最好使用`KdBreakPoint()`来在代码中设置断点，这具有通用性（X64不支持内联汇编）。
+
+**调试信息**
+
+在WinXP及之前的系统中内核提供的是`DbgPrint`函数，这个函数类似`printf`直接输出调试信息。而在Vista及之后，调试信息很多，那就需要对调试信息进行分类，系统增加了调试输出的Filter机制（`Component Id + Message Level`）。在新的系统中就提供了`DbgPrintEx`函数，它除了`DbgPrint`函数的原有参数外，额外提供了`ULONG ComponentId`和`ULONG Level`两个参数。
+
+提供了`DbgPrintEx`之后，原有的`DbgPrint`其实就变成了它的一个特例，下面以一种宏定义的形式来说明一下（实际实现并非宏定义）。即`DbgPrint`相当于`DbgPrintEx`的前两个参数为默认的`DPFLTR_DEFAULT_ID`和`DPFLTR_INFO_LEVEL`。
+
+```
+#define DbgPrint DbgPrintEx ( DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL, Format, arguments )
+```
+
+这里面其实有一个问题，在Vista之后一旦分了调试信息输出等级后，系统默认的调试输出级别被设置为`DPFLTR_ERROR_LEVEL`，即之后错误级别的调试信息才能输出，其他的调试信息都是不输出的（一共分为错误，警告，追踪和信息四个级别）。所以在XP上的驱动源码重新编译放到Vista及之后系统上时，调试信息输出不出来。
+
+要修改这块信息有两种方法，一种是挂内核调试器，修改内核的一个全局变量`nt!kd_default_musk`，将它的值修改为8（或大于8的值），即设置级别为INFO，这样修改可以立即生效，但是重启系统就失效了。另一种方法是修改注册表，如下所示。这种方法需要重启系统才能生效，并且将一直生效。
+
+```
+Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Session Manager\Debug Print Filter]
+
+"DEFAULT"=dword:0000000f
+```
+
+> DbgPrint和DbgPrintEx可以在`IRQL<=DIRQL`时使用，但是对于Unicode的输出`%wc`和`%ws`只能在`IRQL==PASSIVE_LEVEL`时使用。由于调试器使用IPI与其他进程通信，如果IRQL大于DIRQL会造成思索。>
 
 **参考文章**
 
