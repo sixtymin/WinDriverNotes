@@ -26,13 +26,17 @@ http://edu.51cto.com/course/12418.html
 WDM驱动程序
 http://edu.51cto.com/course/15379.html
 
->> 看到这里
-
 张佩 驱动讲稿  视频
 https://i.youku.com/i/UMzQzODg3MzU2/videos?spm=a2hzp.8244740.0.0
 
+>> 看到这里
+
 // 基础视频
 https://www.bilibili.com/video/av26193169/
+
+// 书籍
+Windows驱动开发技术详解
+Windows内核安全与驱动开发
 
 ---------------------------
 // 微软文档
