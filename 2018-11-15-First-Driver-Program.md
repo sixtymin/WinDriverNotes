@@ -155,7 +155,7 @@ NTSTATUS HelloDDKDispatchRoutine(IN PDEVICE_OBJECT pDevObj,
 }
 ```
 
-应用程序开发时，都会有一个入口函数，比如控制台程序的`main()`函数。驱动程序也需要入口函数，它的入口函数为`DriverEntry`，如上述代码块中所示。驱动入口函数主要是初始化驱动程序，定位和申请硬件资源，创建内核对象等，`DriverEntry`由内核中的`I/O`管理器负责调用。对于入口函数的两个参数需要多说一点，参数`PDRIVER_OBJECT pDriverObject`是`I/O`管理器中传递进来的驱动对象，它用于表示当前的驱动程序；参数`PUNICODE_STRING pRegistryPath`是一个指针，指向Unicode字符串，博阿含了此驱动所使用的注册表项。
+应用程序开发时，都会有一个入口函数，比如控制台程序的`main()`函数。驱动程序也需要入口函数，它的入口函数为`DriverEntry`，如上述代码块中所示。驱动入口函数主要是初始化驱动程序，定位和申请硬件资源，创建内核对象等，`DriverEntry`由内核中的`I/O`管理器负责调用。对于入口函数的两个参数需要多说一点，参数`PDRIVER_OBJECT pDriverObject`是`I/O`管理器中传递进来的驱动对象，它用于表示当前的驱动程序；参数`PUNICODE_STRING pRegistryPath`是一个指针，指向Unicode字符串，包含了此驱动所使用的注册表项。
 
 类型`DRIVER_OBJECT`下面给出一个详细的内容，它的定义可以从`ntddk.h`中找到，如下所示。将它各个成员的含义用注释标注。
 
@@ -194,7 +194,7 @@ typedef struct _DRIVER_OBJECT *PDRIVER_OBJECT;
 
 `HelloDDKUnload`函数为卸载驱动例程，当驱动程序被卸载时，由`I/O`管理器负责调用此回调函数。该函数遍历此驱动程序中创建的所有设备对象，驱动对象的`DeviceObject`成员中保存了创建的第一个设备对象地址，而每一个设备对象的`NextDevice`域记录了该驱动创建的下一个设备对象的地址，这样就形成了一个链表。卸载驱动函数就是遍历链表，删除所有设备对象及其符号链接。
 
-函数`HelloDDKDispatchRoutine`是默认的派遣函数，在入口函数中将设备对象的创建，关闭和读写操作都指定到了这个默认的派遣函数了。默认的派遣函数中也非常简单，设置IRP状态为成功，只是完成此IRP，最后返回成功。
+函数`HelloDDKDispatchRoutine`是默认的派遣函数，在入口函数中将设备对象的创建，关闭和读写操作都指定到了这个默认的派遣函数了。默认的派遣函数中也非常简单，设置IRP状态为成功，并且通知此IRP完成，最后返回成功。
 
 **NT式驱动编译**
 
@@ -207,20 +207,21 @@ typedef struct _DRIVER_OBJECT *PDRIVER_OBJECT;
 5. 使用VirtualDDK，DDKWizard集成到低版本的VS中模板创建工程编译，同时包括EasySys创建编译工程。
 6. 使用高版本的Visual Studio，比如VS2015等，直接使用其中的驱动工程模板创建工程，编码且编译。
 
-其中最为方便的当属于直接使用`Visual Studio 2013`或更高版本，它们直接创建出编译工程来，如下图为VS2017中创建驱动工程。
+其中最为方便的当属直接使用`Visual Studio 2013`或更高版本，它们直接创建出编译工程来，如下图为VS2017中创建驱动工程。
 
 ![图2 VS2017创建驱动工程](2018-11-15-First-Driver-Program-VS2017-Create-Legacy-Driver.jpg)
 
 如果说机器性能不好，只能用VS2008或更低版本，那么安装一个VirtualDDK或DDKWizard是个不错的选择，它们也可以直接创建VS中直接编译的工程。如下两个图所示，在创建Project中就有了VisualDDK选项，选中后在驱动模型中还可以选择传统的NT驱动和WDM驱动。
 
 ![图3 VS2008和VirtualDDK](2018-11-15-First-Driver-Program-VS2008-VirutalDDK-DriverProject.jpg)
+
 ![图4 VS2008和VirtualDDK](2018-11-15-First-Driver-Program-VS2008-VirutalDDK-DriverProject-1.jpg)
 
 如果更简单的方式，则是编写makefile，sources，dirs文件，直接使用WDK提供的编译命令行运行build命令进行编译了。如图5为`WDK7600`中提供的编译命令行环境。
 
 ![图5 VS2008和VisualDDK](2018-11-15-First-Driver-Program-WDK-Compile-Cmds.png)
 
-其他的就不再详细说了，其实这些编译方式最终都要使用`cl.exe`和`link.exe`进行编译链接；而这些使用VS建立工程的方式（高版本VS除外）最终也是使用`nmake`的方式建立工程，编译时一样需要运行`build`命令解析sources文件进行编译。这里以编写sources文件的方式来编译，如下编写makefile和sources两个文件。
+其他的就不再详细说了，其实这些编译方式最终都要使用`cl.exe`和`link.exe`进行编译链接；而这些使用VS建立工程的方式（高版本VS除外）最终也是使用`nmake`的方式建立工程，编译时一样需要通过运行`build`命令解析sources文件进行编译。这里以编写sources文件的方式来编译，如下编写makefile和sources两个文件。
 
 ```
 // makefile
@@ -245,7 +246,7 @@ SOURCES=Driver.cpp\
 
 **NT式驱动安装**
 
-安装NT式驱动也有很多种方式，但是每一种方式最终都是要通过服务控制器SCM（Service Contrl Manager）来完成。
+安装NT式驱动也有很多种方式，但是每一种方式最终都是要通过服务控制管理器SCM（Service Contrl Manager）来完成。
 
 首先可以通过服务控制命令来完成NT驱动加载，即`sc`命令，该命令用于与服务控制器和服务进行通信。详细的命令说明可以从命令行中查看它的帮助。如下命令依次可以完成NT驱动的注册，启动，停止与删除功能。
 
@@ -355,7 +356,7 @@ NT式驱动虽然作为一个服务进行加载，其实它是由`I/O`管理器�
 
 再就是`HelloDDK.sys`文件，它会被加载到系统的`System`进程中，使用`ProcXp.exe`程序就可以在该进程加载的模块中找到该文件。
 
-> 直接从Windows驱动开发技术详解上Copy下来的代码有一点问题，就是`Unload`函数中会用到设备符号链接名删除注册的符号链接，而此时符号链接名的字符串所在内存已经无效。这是由于其中的函数被设置`INIT`代码块，`PAGE`代码块所导致，源代码中的写法，符号链接名字的字符串被编译进`INIT`代码块，一旦驱动初始化完毕就有可能将这块内存卸载，这就导致在驱动卸载需要用到这个字符串时出现访问非法，导致蓝屏。本文所用代码已修改！
+> 直接从Windows驱动开发技术详解上Copy下来的代码有一点问题，就是`Unload`函数中会用到设备符号链接名删除注册的符号链接，而此时符号链接名的字符串所在内存已经无效。这是由于其中的函数被设置`INIT`代码块，`PAGE`代码块所导致，源代码中的写法使得符号链接名字的字符串被编译进`INIT`代码块，一旦驱动初始化完毕就有可能将这块内存卸载，这就导致在驱动卸载需要用到这个字符串时出现访问非法，导致蓝屏。本文所用代码已修改！
 
 ###WDM驱动程序###
 
@@ -480,7 +481,6 @@ NTSTATUS HelloWDMAddDevice(IN PDRIVER_OBJECT pDriverObject,
 	return status;
 }
 
-
 #pragma PAGEDCODE
 NTSTATUS DefaultPnpHandler(PDEVICE_EXTENSION pdx, PIRP Irp)
 {
@@ -490,7 +490,6 @@ NTSTATUS DefaultPnpHandler(PDEVICE_EXTENSION pdx, PIRP Irp)
 	KdPrint(("Leave DefaultPnpHandler\n"));
 	return IoCallDriver(pdx->NextStackDevice, Irp);
 }
-
 
 #pragma PAGEDCODE
 NTSTATUS HandleRemoveDevice(PDEVICE_EXTENSION pdx, PIRP Irp)
@@ -511,7 +510,6 @@ NTSTATUS HandleRemoveDevice(PDEVICE_EXTENSION pdx, PIRP Irp)
 	KdPrint(("Leave HandleRemoveDevice\n"));
 	return STATUS_SUCCESS;
 }
-
 
 #pragma PAGEDCODE
 NTSTATUS HelloWDMPnp(IN PDEVICE_OBJECT fdo,
@@ -559,7 +557,7 @@ NTSTATUS HelloWDMPnp(IN PDEVICE_OBJECT fdo,
 	}
 
 #if _DBG
-	static char * fcnname[] = 
+	static char * fcnname[] =
 	{
 		"IRP_MN_START_DEVICE",
 		"IRP_MN_QUERY_REMOVE_DEVICE",
@@ -626,7 +624,7 @@ void HelloWDMUnload(IN PDRIVER_OBJECT pDriverObject)
 
 在`HelloWDMAddDevice`函数中有一个`PAGED_CODE()`，它是DDK提供的宏，在check版本有效，一旦该函数运行时所处的中断请求级别高于`APC_LEVEL`就会出现断言。这是用于确保代码使用可分页内存，否则可能出现问题。创建设备对象类似与NT式驱动，除了NT式驱动一样创建对象，创建符号链接外，还需要调用`IoAttachDeviceToDeviceStack`函数将此设备对象挂接在设备栈中。
 
-函数`HelloWDMPnp`为WDM处理PnP的回调函数，`IRP_MJ_PNP`会细分为若干子类，当前就对`IRP_MN_REMOVE_DEVICE`做了特护处理，调用`HandleRemoveDevice`；其他的子类则调用默认的处理函数`DefaultPnpHandler`。在函数`HandleRemoveDevice`中完成了NT驱动中`DriverUnload`的逻辑，这里还多了一个逻辑是调用`IoDetachDevice`函数将当前的设备对象从底层设备对象中摘除。`DefaultPnpHandler`函数中只是简单调用`IoSkipCurrentIrpStackLocation`将当前`IRP`栈跳过，然后调用`IoCallDriver`将IRP传递给底层的设备对象处理。
+函数`HelloWDMPnp`为WDM处理PnP的回调函数，`IRP_MJ_PNP`会细分为若干子类，当前就对`IRP_MN_REMOVE_DEVICE`做了特殊处理，调用`HandleRemoveDevice`；其他的子类则调用默认的处理函数`DefaultPnpHandler`。在函数`HandleRemoveDevice`中完成了NT驱动中`DriverUnload`的逻辑，这里还多了一个逻辑是调用`IoDetachDevice`函数将当前的设备对象从底层设备对象中摘除。`DefaultPnpHandler`函数中只是简单调用`IoSkipCurrentIrpStackLocation`将当前`IRP`栈跳过，然后调用`IoCallDriver`将IRP传递给底层的设备对象处理。
 
 函数`HelloWDMDispatchRoutine`和NT式驱动中类似，不再详述。驱动卸载例程`HelloWDMUnload`中工作被前面的函数简化了，所以在该函数中不需要再做什么工作。
 
@@ -636,9 +634,9 @@ void HelloWDMUnload(IN PDRIVER_OBJECT pDriverObject)
 
 **WDM的INF文件**
 
-WDM驱动是NT驱动的扩展，主要是针对开发硬件驱动而推出的。随着硬件越来越多，并且越来越复杂，早期硬件驱动安装都是手动安装，并由人工配置资源，这样系统中硬件驱动安装就变成了一项专业技能。为了方便硬件驱动程序安装，微软开发了WDM驱动模型，WDM并不是为方便硬件驱动开发而退出，WDM程序比较复杂，理解起来相比NT要困难，导致开发WDM驱动难度较大。当然了，如果具有NT式驱动编写基础，WDM硬件驱动也不是特别困难。编写硬件驱动最主要的是了解硬件规格，知道硬件的各种资源，比如内存，寄存器，中断，通过控制内存，寄存器和中断来驱动硬件。
+WDM驱动是NT驱动的扩展，主要是针对开发硬件驱动而推出的。随着硬件越来越多，并且越来越复杂，早期硬件驱动安装都是手动安装，并由人工配置资源，这样系统中硬件驱动安装就变成了一项专业技能。为了方便硬件驱动程序安装，微软开发了WDM驱动模型，WDM并不是为方便硬件驱动开发而推出，WDM程序比较复杂，理解起来相比NT要困难，导致开发WDM驱动难度较大。当然了，如果具有NT式驱动编写基础，WDM硬件驱动也不是特别困难。编写硬件驱动最主要的是了解硬件规格，知道硬件的各种资源，比如内存，寄存器，中断，通过控制内存，寄存器和中断来驱动硬件。
 
-WDM驱动程序安装需要一个INF文件，设备信息文件（`Device INformation File`）。每一个驱动包中必须博阿含一个INF文件，系统安装组件在安装设备时需要读取它，INF文件并非安装脚本，它是一个ASCII或Unicode文本文件，提供了设备和驱动信息，包括驱动文件，注册表条目，设备ID，catalog文件和版本信息等。不仅仅是在设备或驱动安装时需要INF，当用户请求驱动更新时牙需要INF文件。INF文件的内容和格式依赖于设备安装类别，设备安装类别是为了帮助设备安装，具有相同的安装和配置方式的设备被分为相同类别，设备安装类定义了类安装器和类辅助安装器，微软定义了大部分设备的安装类别，每一个类别都有GUID与之关联，具有`GUID_DEVCLASS_XXX`形式；如果设备不再这些系统提供类别内，可以自定义设备类别，具体内容可参考WDK中inf相关帮助文档。
+WDM驱动程序安装需要一个INF文件，设备信息文件（`Device INformation File`）。每一个驱动包中必须包含一个INF文件，系统安装组件在安装设备时需要读取它，INF文件并非安装脚本，它是一个ASCII或Unicode文本文件，提供了设备和驱动信息，包括驱动文件，注册表条目，设备ID，catalog文件和版本信息等。不仅仅是在设备或驱动安装时需要INF，当用户请求驱动更新时也需要INF文件。INF文件的内容和格式依赖于设备安装类别，设备安装类别是为了帮助设备安装，具有相同的安装和配置方式的设备被分为相同类别，设备安装类定义了类安装器和类辅助安装器，微软定义了大部分设备的安装类别，每一个类别都有GUID与之关联，具有`GUID_DEVCLASS_XXX`形式；如果设备不再这些系统提供类别内，可以自定义设备类别，具体内容可参考WDK中inf相关帮助文档。
 
 `Win+R`中输入`inf`就可以定位到系统盘的`Windows\INF`目录，其中包含了系统安装的所有WDM驱动的INF文件。INF文件格式类似`ini`文件，分节区，每个节区中内容以`key=words`等形式的存在。下面简单介绍INF文件中常用内容。INF是由`Sections`，`Keyword`，`Value`等形式组成，如下为`Version`节的一个示例：
 ```
@@ -673,9 +671,9 @@ WDM驱动程序安装需要一个INF文件，设备信息文件（`Device INform
 
 `device-description`条目标识被安装的设备，可以以任何可打印字符串或Token（%strkey%）形式给出；`install-section-name`指定未修饰的INF安装节区名字，即DDInstall节。`hw-id`指定供应商定义的硬件ID字符串，用于标识一个设备。它用于PnP管理器匹配设备的INF文件。这个字符串有如下的一些格式，`enumerator\enumerator-specific-device-id`，比如`PCI\VEN_1011&DEV_002&SUBSYS_00000000&REV_02`；`*enumerator-specific-device-id`，比如`*PNP0F01`表示微软串口鼠标，或者`SERENUM\PNP0F01`；`device-class-specific-ID`等形式。
 
-WDK文档中给出了编写INF的建议，为驱动编写INF文件最好的方式是修改WDK中提供的例子中的INF文件，大部分WDK例子驱动中包含了INF文件。写完的INF文件，可以使用`ChkINF`程序（在WDK的开始菜单中有选项）进行校验，简单是否有错误。
+WDK文档中给出了编写INF的建议，为驱动编写INF文件最好的方式是修改WDK中提供的例子中的INF文件，大部分WDK例子驱动中包含了INF文件。写完的INF文件，可以使用`ChkINF`程序（在WDK的开始菜单中有选项）进行校验，检查是否有错误。
 
-INF中常见的集中操作如下所示：
+INF中常见的几种操作如下所示：
 
 ```
 LogConfig       Log日志文件配置
@@ -944,7 +942,7 @@ INF信息最终都会进入注册表进行保存，如下几个子目录中几�
 
 **断点设置**
 
-如果要调试驱动，则需要在驱动入口处设置断点。使用内联汇编`__asm{int 3;}`可以实现在代码中加入断点。要实现X86和X64统一，最好使用`KdBreakPoint()`来在代码中设置断点，这具有通用性（X64不支持内联汇编）。
+如果要调试驱动，则需要在驱动入口处设置断点。使用内联汇编`__asm{int 3;}`可以在代码中加入断点。要实现X86和X64统一，最好使用`KdBreakPoint()`来在代码中设置断点，这具有通用性（X64不支持内联汇编）。
 
 **调试信息**
 
@@ -976,7 +974,7 @@ Windows Registry Editor Version 5.00
 
 1. 物理设备对象（PDO），对应真实/逻辑物理设备，由总线驱动创建，总是命名的。
 2. 功能设备对象（FDO），功能驱动所创建，用来和总线驱动创建的PDO呼应，实现物理设备真正功能。
-3. 过去设备对象（Filter DO），插入PDO-FDO主城的设备栈中，参与`I/O`命令处理。
+3. 过滤设备对象（Filter DO），插入PDO-FDO主城的设备栈中，参与`I/O`命令处理。
 4. 控制设备对象（Control DO），不对应真实/逻辑的物理设备。一般驱动程序只创建唯一控制设备对象，不用来实现具体的设备功能，而是用于驱动控制，它也总是命名的设备对象。
 
 
@@ -986,4 +984,5 @@ Windows Registry Editor Version 5.00
 1. 《Windows驱动开发技术详解》
 2. [VS2013 WDK8.1驱动开发1](http://www.coderjie.com/blog/91a5722cdd2d11e6841d00163e0c0e36)
 3. [Windows驱动inf文件详解](https://blog.csdn.net/u011191259/article/details/41963403)
+
 By Andy@2018-11-15 09:48:52

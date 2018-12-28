@@ -16,6 +16,20 @@ http://exp-blog.com/2018/07/26/pid-2146/
 https://blog.csdn.net/superqiong2011/article/details/9198195
 https://www.cnblogs.com/iBinary/p/8280912.html
 
+---------------------------
+// 微软文档
+
+// 微软驱动程序入门文档
+https://msdn.microsoft.com/zh-cn/library/windows/hardware/ff557573(v=vs.85).aspx
+
+微软新文档网址 docs  上驱动开发页
+https://docs.microsoft.com/zh-cn/windows-hardware/drivers/develop/
+https://github.com/Microsoft/Windows-driver-samples
+
+// WDF驱动
+https://docs.microsoft.com/zh-cn/windows-hardware/drivers/wdf/
+
+
 ------------------------------------
 // 驱动视频
 看雪视频
@@ -34,23 +48,10 @@ https://i.youku.com/i/UMzQzODg3MzU2/videos?spm=a2hzp.8244740.0.0
 // 基础视频
 https://www.bilibili.com/video/av26193169/
 
+
 // 书籍
 Windows驱动开发技术详解
 Windows内核安全与驱动开发
-
----------------------------
-// 微软文档
-
-// 微软驱动程序入门文档
-https://msdn.microsoft.com/zh-cn/library/windows/hardware/ff557573(v=vs.85).aspx
-
-微软新文档网址 docs  上驱动开发页
-https://docs.microsoft.com/zh-cn/windows-hardware/drivers/develop/
-https://github.com/Microsoft/Windows-driver-samples
-
-// WDF驱动
-https://docs.microsoft.com/zh-cn/windows-hardware/drivers/wdf/
-
 
 ---------------------------
 // 关于内核 和 驱动的博客文章
