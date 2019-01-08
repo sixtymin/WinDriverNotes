@@ -2,10 +2,6 @@
 MSDN 我告诉你    下载各种微软系统，工具等
 http://msdn.itellyou.cn/
 
-学习过程：
-1. 看视频，做笔记！
-2. 看书，做笔记，做练习
-3. 看几个博客看一下，涨点知识
 
 ////////////////////////////////////////////////////////////
 // 驱动开发环境
@@ -23,7 +19,7 @@ https://www.cnblogs.com/iBinary/p/8280912.html
 https://msdn.microsoft.com/zh-cn/library/windows/hardware/ff557573(v=vs.85).aspx
 
 微软新文档网址 docs  上驱动开发页
-https://docs.microsoft.com/zh-cn/windows-hardware/drivers/develop/
+https://docs.microsoft.com/en-us/windows-hardware/drivers/index
 https://github.com/Microsoft/Windows-driver-samples
 
 // WDF驱动
