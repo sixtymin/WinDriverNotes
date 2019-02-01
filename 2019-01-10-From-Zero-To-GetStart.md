@@ -1204,15 +1204,563 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT driver, PUNICODE_STRING reg_path)
 
 ###内核回调函数###
 
+回调，供其他模块或逻辑调用的函数。比如写界面时，消息处理函数就是一个回调，即有消息时由系统消息系统调用该函数。内核中也有回调机制，比如一些事件发生时要调用注册的函数，进程创建，线程创建，模块加载，注册表操作等。
 
+如下代码为进程创建回调和模块加载回调的例子：
+
+```
+#include <ntddk.h>
+
+NTSTATUS PsLookupProcessByProcessId(
+	HANDLE    ProcessId,
+	PEPROCESS *Process
+);
+
+VOID MyProcessCallBack(HANDLE ParentID, HANDLE ProcessId, BOOLEAN bCreate)
+{
+	if (bCreate)
+	{
+		PEPROCESS Process = NULL;
+		NTSTATUS status = PsLookupProcessByProcessId(ProcessId, &Process);
+		int i;
+		if (NT_SUCCESS(status))
+		{
+			for (i = 0; i < 3 * PAGE_SIZE; i++)
+			{
+				if (!strncmp("notepad.exe", (PCHAR)Process + i, strlen("notepad.exe")))
+				{
+					if (i < 3 * PAGE_SIZE)
+					{
+						KdPrint(("Process Name: %s", (PCHAR)((ULONG)Process + i)));
+						if (*((PUCHAR)Process + 0xBC) != 0)
+						{
+							KdPrint(("The notepad.exe is be debugging\n"));
+						}
+						break;
+					}
+				}
+			}
+		}
+	}
+}
+
+VOID MyLoadImageCallback(PUNICODE_STRING imagename, HANDLE ProcessId, PIMAGE_INFO imageinfo)
+{
+	KdPrint(("Proc: %d %ws--- start address is %p", ProcessId, imagename->Buffer, imageinfo->ImageBase));
+}
+
+NTSTATUS Unload(PDRIVER_OBJECT driver)
+{
+	NTSTATUS status = PsSetCreateProcessNotifyRoutine(MyProcessCallBack, TRUE);
+	status = PsRemoveLoadImageNotifyRoutine(MyLoadImageCallback);
+	return STATUS_SUCCESS;
+}
+
+NTSTATUS DriverEntry(PDRIVER_OBJECT driver, PUNICODE_STRING reg_path)
+{
+	KdPrint(("Enter the driver\n"));
+	driver->DriverUnload = Unload;
+
+	NTSTATUS status = PsSetCreateProcessNotifyRoutine(MyProcessCallBack, FALSE);
+	status = PsSetLoadImageNotifyRoutine(MyLoadImageCallback);
+
+	return STATUS_SUCCESS;
+}
+```
 
 ###X86逆向基础###
 
-###驱动实现本地时间验证###
+这块主要是X86的函数调用约定，栈的使用（局部变量，函数参数），全局变量等。因为不涉及驱动，不在这里总结内容。
+
+###驱动级的本地验证###
+
+正常写完的驱动都会是给其他人使用的，写好驱动如何管理呢？一般情况下是编写配套的DLL，用它实现驱动加载，通信，验证等。但是这种情况下，由于DLL与驱动的通信很容易
+
+时间戳算法，可以把一个常规时间转成一个ULONG，代表的即从1970年1月1日到现在所经历的秒数。最简单的方法就是将当前的时间戳和我们规定的时间戳进行对比，如果大于等于，那么说明过期了，就设置驱动不工作即可（这里是在DriverEntry中直接返回了`STATUS_NOT_SUPPORTED`）。
+
+代码非常简单，如下所示:
+
+```
+#include <ntddk.h>
+
+UINT16 DayOfMon[12] = {31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+#define SENCOND_OF_DAY 86400
+ULONG DeadTime = 1551109612;
+
+extern POBJECT_TYPE *PsThreadType;
+
+PETHREAD pThreadObj = NULL;
+BOOLEAN TimeSwitch = FALSE;
+
+NTSTATUS Unload(PDRIVER_OBJECT driver)
+{
+	KdPrint(("Unload nothing to do\n"));
+	TimeSwitch = TRUE;
+	KeWaitForSingleObject(pThreadObj, Executive, KernelMode, FALSE, NULL);
+	ObDereferenceObject(pThreadObj);
+	return STATUS_SUCCESS;
+}
+
+BOOLEAN CheckTimeLocal()
+{
+	LARGE_INTEGER snow, now, tickcount;
+	TIME_FIELDS now_fiedls;
+
+	KeQuerySystemTime(&snow);	// 获取标准时间，格林尼治时间
+	ExSystemTimeToLocalTime(&snow, &now); // 转化为北京时间
+	RtlTimeToTimeFields(&now, &now_fiedls); // 转化为结构体
+
+	KdPrint(("%d-%d-%d--\n", now_fiedls.Year, now_fiedls.Month, now_fiedls.Day));
+
+	UINT16 iYear, iMon, iDay, iHour, iMin, iSec;
+	iYear = now_fiedls.Year;
+	iMon = now_fiedls.Month;
+	iDay = now_fiedls.Day;
+	iHour = now_fiedls.Hour;
+	iMin = now_fiedls.Minute;
+	iSec = now_fiedls.Second;
+
+	SHORT i, Cyear = 0;
+	ULONG CountDay = 0;
+	for (i = 1970; i < iYear; i++)//>
+	{
+		if (((i % 4 == 0) && (i % 100 != 0)) || (i % 400 == 0)) Cyear++;
+	}
+
+	CountDay = Cyear * 364 + (iYear - 1970 - Cyear) * 365;
+	for (i = 1; i < iMon; i++)//>
+	{
+		if ((i == 2) && (((i % 4 == 0) && (i % 100 != 0)) || (i % 400 == 0)))
+		{
+			CountDay += 29;
+		}
+		else
+		{
+			CountDay += DayOfMon[i-1];
+		}
+	}
+	CountDay += (iDay - 1);
+	CountDay = CountDay * SENCOND_OF_DAY + (unsigned long)iHour * 3600 + (unsigned long)iMin * 60 + iSec;
+
+	KdPrint(("Now: %d \n", CountDay));
+	if (CountDay < DeadTime)//>
+	{
+		return TRUE;
+	}
+
+	return FALSE;
+}
+
+VOID CheckTimeThread(PVOID StartContext)
+{
+	LARGE_INTEGER SleepTime;
+	SleepTime.QuadPart = -200000000;
+
+	KdPrint(("Enter the thread\n"));
+	while (1)
+	{
+		if (TimeSwitch)
+			break;
+
+		if (!CheckTimeLocal())
+		{
+			KdPrint(("Driver Invalid\n"));
+		}
+
+		KeDelayExecutionThread(KernelMode, FALSE, &SleepTime);
+	}
+	PsTerminateSystemThread(STATUS_SUCCESS);
+}
+
+NTSTATUS DriverEntry(PDRIVER_OBJECT driver, PUNICODE_STRING reg_path)
+{
+	KdPrint(("Enter the driver\n"));
+	driver->DriverUnload = Unload;
+
+	if (!CheckTimeLocal())
+	{
+		return STATUS_NOT_SUPPORTED;  // 驱动自卸载
+	}
+
+	OBJECT_ATTRIBUTES ObjAttr = {0};
+	HANDLE ThreadHandle = 0;
+	InitializeObjectAttributes(&ObjAttr, NULL, OBJ_KERNEL_HANDLE, 0, NULL);
+	NTSTATUS status = PsCreateSystemThread(&ThreadHandle, THREAD_ALL_ACCESS, &ObjAttr, NULL, NULL, CheckTimeThread, NULL);
+	if (!NT_SUCCESS(status))
+	{
+		return STATUS_NOT_SUPPORTED;
+	}
+
+	status = ObReferenceObjectByHandle(ThreadHandle, THREAD_ALL_ACCESS, *PsThreadType, KernelMode, &pThreadObj, NULL);
+	if (!NT_SUCCESS(status))
+	{
+		ZwClose(ThreadHandle);
+		return STATUS_NOT_SUPPORTED;
+	}
+
+	ZwClose(ThreadHandle);
+
+	{
+		KdPrint(("Driver Start Work\n"));
+	}
+
+	return STATUS_SUCCESS;
+}
+```
+
+加一点强度，启动一个线程循环定时检查时间是否到期！如果到期则采取措施。这些代码之前都解释过，没有太多难度。
 
 ###驱动模块隐藏###
 
+很多学习驱动开发的都是想要做外挂，驱动隐藏对于外挂是比较有用的技术（并非鼓励大家写外挂）。隐藏了驱动模块不被扫描到就避免模块被发现后根据特征被当作外挂杀掉。
+
+PCHunter是根据驱动对象来获取每个驱动的，系统中加载的所有驱动对象相互链接，这样就形成了一条链表，那么遍历链表就可以获取所有的驱动，PCHunter差不多就是通过这个方法来实现。那如果要隐藏驱动，简单的做法就是将自己的驱动从链上摘掉。
+
+内核有一个函数`nt!MiProcessLoaderEntry`它用于处理加载驱动链，但是这个函数不导出，使用搜索特征的方法从`nt`模块中将这个函数搜索到。
+
+简单解释一下特征搜索。使用该函数起始的一些字节码作为特征（一定保证不会出现重复，比如函数开始的前10字节就很容易重复），在PE文件（`nt`模块）的代码段逐字节进行对比，如果有一段内存和特征完全匹配，则认为是待查找函数的起始地址。这里搜索逻辑是首先找到nt基地址，遍历所有模块，如果函数`NtOpenFile`的地址在该模块区间中，则认为是`nt`模块；找到模块之后，解析PE文件格式，查找它的`.text`段；最后从`.text`段中逐一字节对比查找特征。
+
+详细代码如下，关键地方有注释，不再详细解释。视频中写的X64系统上的驱动，这里我改成了X86的，测试无问题。
+
+```
+#include <ntddk.h>
+#include <intrin.h>
+
+typedef struct _IMAGE_FILE_HEADER // Size=20
+{
+	USHORT Machine;
+	USHORT NumberOfSections;
+	ULONG TimeDateStamp;
+	ULONG PointerToSymbolTable;
+	ULONG NumberOfSymbols;
+	USHORT SizeOfOptionalHeader;
+	USHORT Characteristics;
+} IMAGE_FILE_HEADER, *PIMAGE_FILE_HEADER;
+
+typedef struct _IMAGE_SECTION_HEADER
+{
+	UCHAR  Name[8];
+	union
+	{
+		ULONG PhysicalAddress;
+		ULONG VirtualSize;
+	} Misc;
+	ULONG VirtualAddress;
+	ULONG SizeOfRawData;
+	ULONG PointerToRawData;
+	ULONG PointerToRelocations;
+	ULONG PointerToLinenumbers;
+	USHORT  NumberOfRelocations;
+	USHORT  NumberOfLinenumbers;
+	ULONG Characteristics;
+} IMAGE_SECTION_HEADER, *PIMAGE_SECTION_HEADER;
+
+typedef struct _IMAGE_DATA_DIRECTORY
+{
+	ULONG VirtualAddress;
+	ULONG Size;
+} IMAGE_DATA_DIRECTORY, *PIMAGE_DATA_DIRECTORY;
+
+typedef struct _RTL_PROCESS_MODULE_INFORMATION
+{
+	HANDLE Section;         // Not filled in
+	PVOID MappedBase;
+	PVOID ImageBase;
+	ULONG ImageSize;
+	ULONG Flags;
+	USHORT LoadOrderIndex;
+	USHORT InitOrderIndex;
+	USHORT LoadCount;
+	USHORT OffsetToFileName;
+	UCHAR  FullPathName[256];
+} RTL_PROCESS_MODULE_INFORMATION, *PRTL_PROCESS_MODULE_INFORMATION;
+
+typedef struct _RTL_PROCESS_MODULES
+{
+	ULONG NumberOfModules;
+	RTL_PROCESS_MODULE_INFORMATION Modules[1];
+} RTL_PROCESS_MODULES, *PRTL_PROCESS_MODULES;
+
+typedef enum _SYSTEM_INFORMATION_CLASS
+{
+	SystemModuleInformation = 0xb,
+} SYSTEM_INFORMATION_CLASS;
+
+#define IMAGE_NUMBEROF_DIRECTORY_ENTRIES    16
+
+// Optional header format.
+typedef struct _IMAGE_OPTIONAL_HEADER {
+	USHORT  Magic;
+	UCHAR   MajorLinkerVersion;
+	UCHAR   MinorLinkerVersion;
+	ULONG   SizeOfCode;
+	ULONG   SizeOfInitializedData;
+	ULONG   SizeOfUninitializedData;
+	ULONG   AddressOfEntryPoint;
+	ULONG   BaseOfCode;
+	ULONG   BaseOfData;
+	ULONG   ImageBase;
+	ULONG   SectionAlignment;
+	ULONG   FileAlignment;
+	USHORT  MajorOperatingSystemVersion;
+	USHORT  MinorOperatingSystemVersion;
+	USHORT  MajorImageVersion;
+	USHORT  MinorImageVersion;
+	USHORT  MajorSubsystemVersion;
+	USHORT  MinorSubsystemVersion;
+	ULONG   Win32VersionValue;
+	ULONG   SizeOfImage;
+	ULONG   SizeOfHeaders;
+	ULONG   CheckSum;
+	USHORT  Subsystem;
+	USHORT  DllCharacteristics;
+	ULONG   SizeOfStackReserve;
+	ULONG   SizeOfStackCommit;
+	ULONG   SizeOfHeapReserve;
+	ULONG   SizeOfHeapCommit;
+	ULONG   LoaderFlags;
+	ULONG   NumberOfRvaAndSizes;
+	IMAGE_DATA_DIRECTORY DataDirectory[IMAGE_NUMBEROF_DIRECTORY_ENTRIES];
+} IMAGE_OPTIONAL_HEADER32, *PIMAGE_OPTIONAL_HEADER32;
+
+typedef struct _IMAGE_NT_HEADERS {
+	ULONG Signature;
+	IMAGE_FILE_HEADER FileHeader;
+	IMAGE_OPTIONAL_HEADER32 OptionalHeader;
+} IMAGE_NT_HEADERS32, *PIMAGE_NT_HEADERS32;
+
+#define HB_POOL_TAG                '0mVZ'
+
+typedef NTSTATUS(__stdcall *PMiProcessLoaderEntry)(PVOID pDriverSection, int bLoad);
+
+PVOID MiProcessLoaderEntry1 = NULL;
+BOOLEAN TempFlags = FALSE;
+
+PVOID g_KernelBase = NULL;
+ULONG  g_KernelSize = 0;
+
+NTSTATUS __stdcall ZwQuerySystemInformation(
+	_In_      SYSTEM_INFORMATION_CLASS SystemInformationClass,
+	_Inout_   PVOID                    SystemInformation,
+	_In_      ULONG                    SystemInformationLength,
+	_Out_opt_ PULONG                   ReturnLength
+);
+
+PIMAGE_NT_HEADERS __stdcall RtlImageNtHeader(IN PVOID ModuleAddress);
+
+PVOID UtilKernelBase(OUT PULONG pSize)
+{
+	NTSTATUS status = STATUS_SUCCESS;
+	ULONG bytes = 0;
+	PRTL_PROCESS_MODULES pMods = NULL;
+	PVOID checkPtr = NULL;
+	UNICODE_STRING routineName;
+
+	// Already found
+	if (g_KernelBase != NULL)
+	{
+		if (pSize)
+			*pSize = g_KernelSize;
+		return g_KernelBase;
+	}
+
+	RtlInitUnicodeString(&routineName, L"NtOpenFile");
+
+	checkPtr = MmGetSystemRoutineAddress(&routineName);
+	if (checkPtr == NULL)
+		return NULL;
+
+	// Protect from UserMode AV
+	__try
+	{
+		status = ZwQuerySystemInformation(SystemModuleInformation, 0, bytes, &bytes);
+		if (bytes == 0)
+		{
+			//DPRINT("BlackBone: %s: Invalid SystemModuleInformation size\n", CPU_IDX, __FUNCTION__);
+			return NULL;
+		}
+
+		pMods = (PRTL_PROCESS_MODULES)ExAllocatePoolWithTag(NonPagedPoolNx, bytes, HB_POOL_TAG);
+		RtlZeroMemory(pMods, bytes);
+
+		status = ZwQuerySystemInformation(SystemModuleInformation, pMods, bytes, &bytes);
+
+		if (NT_SUCCESS(status))
+		{
+			PRTL_PROCESS_MODULE_INFORMATION pMod = pMods->Modules;
+			// 遍历所有模块，如果发现 NtOpenFile 函数地址位于模块中间，则认为是 nt 模块
+			for (ULONG i = 0; i < pMods->NumberOfModules; i++)
+			{
+				// System routine is inside module
+				if (checkPtr >= pMod[i].ImageBase &&
+					checkPtr < (PVOID)((PUCHAR)pMod[i].ImageBase + pMod[i].ImageSize)) //>
+				{
+					g_KernelBase = pMod[i].ImageBase;
+					g_KernelSize = pMod[i].ImageSize;
+					if (pSize)
+						*pSize = g_KernelSize;
+					break;
+				}
+			}
+		}
+
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER)
+	{
+		//DPRINT("BlackBone: %s: Exception\n", CPU_IDX, __FUNCTION__);
+	}
+
+	if (pMods)
+		ExFreePoolWithTag(pMods, HB_POOL_TAG);
+
+	return g_KernelBase;
+}
+
+NTSTATUS UtilSearchPattern(IN PCUCHAR pattern, IN UCHAR wildcard, IN ULONG_PTR len, IN const VOID* base, IN ULONG_PTR size, OUT PVOID* ppFound)
+{
+	NT_ASSERT(ppFound != NULL && pattern != NULL && base != NULL);
+	if (ppFound == NULL || pattern == NULL || base == NULL)
+		return STATUS_INVALID_PARAMETER;
+
+	__try
+	{
+    	// 开始逐一字节对比特征
+		for (ULONG_PTR i = 0; i < size - len; i++)
+		{
+			BOOLEAN found = TRUE;
+			for (ULONG_PTR j = 0; j < len; j++)
+			{
+				if (pattern[j] != wildcard && pattern[j] != ((PCUCHAR)base)[i + j])
+				{
+					found = FALSE;
+					break;
+				}
+			}
+
+			if (found != FALSE)
+			{
+				*ppFound = (PUCHAR)base + i;
+				return STATUS_SUCCESS;
+			}
+		}
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER)
+	{
+		return STATUS_UNHANDLED_EXCEPTION;
+	}
+
+	return STATUS_NOT_FOUND;
+}
+
+
+NTSTATUS UtilScanSection(IN PCCHAR section, IN PCUCHAR pattern, IN UCHAR wildcard, IN ULONG_PTR len, OUT PVOID* ppFound)
+{
+	NT_ASSERT(ppFound != NULL);
+	if (ppFound == NULL)
+		return STATUS_INVALID_PARAMETER;
+
+	PVOID base = UtilKernelBase(NULL);
+	if (!base)
+		return STATUS_NOT_FOUND;
+
+	PIMAGE_NT_HEADERS32 pHdr = (PIMAGE_NT_HEADERS32)RtlImageNtHeader(base);
+	if (!pHdr)
+		return STATUS_INVALID_IMAGE_FORMAT;
+	// 遍历PE文件中的所有节区，找到指定节区，这里是 `.text`
+	PIMAGE_SECTION_HEADER pFirstSection = (PIMAGE_SECTION_HEADER)((PUCHAR)pHdr + sizeof(IMAGE_NT_HEADERS32));
+	for (PIMAGE_SECTION_HEADER pSection = pFirstSection; pSection < pFirstSection + pHdr->FileHeader.NumberOfSections; pSection++)
+	{
+		ANSI_STRING s1, s2;
+		RtlInitAnsiString(&s1, section);
+		RtlInitAnsiString(&s2, (PCCHAR)pSection->Name);
+		if (RtlCompareString(&s1, &s2, FALSE) == 0)
+			return UtilSearchPattern(pattern, wildcard, len, (PUCHAR)base + pSection->VirtualAddress, pSection->Misc.VirtualSize, ppFound);
+	}
+
+	return STATUS_NOT_FOUND;
+}
+
+NTSTATUS Unload(PDRIVER_OBJECT driver)
+{
+	KdPrint(("Unload nothing to do\n"));
+
+	return STATUS_SUCCESS;
+}
+
+VOID HideDriver(PVOID lpParam)
+{
+	PDRIVER_OBJECT DriverObject = NULL;
+	LARGE_INTEGER SleepTime;
+	SleepTime.QuadPart = -20 * 1000 * 1000;  // 2s
+	while (1)
+	{
+		if (TempFlags)
+		{
+			break;
+		}
+		KeDelayExecutionThread(KernelMode, 0, &SleepTime);
+	}
+	KeDelayExecutionThread(KernelMode, 0, &SleepTime);
+
+	CHAR pattern[] = "\x8b\xff\x55\x8b\xec\x53\x56\x57\x6a\x01\xbb\x40\xe7\x55\x80\x53\xe8\x97\x59\x02\x00\xbf\x80\x4c\x55\x80\x8b\xcf";
+	int sz = sizeof(pattern) - 1;
+	KdPrint(("sz: %d\n", sz));
+	UtilScanSection(".text", (PCUCHAR)pattern, 0xCC, sz, (PVOID*)&MiProcessLoaderEntry1);
+	KdPrint(("MiProcessLoaderEntry addr: %p", MiProcessLoaderEntry1));
+	if (MiProcessLoaderEntry1 == NULL)
+	{
+		PsTerminateSystemThread(STATUS_SUCCESS);
+		return;
+	}
+
+	DriverObject = (PDRIVER_OBJECT)lpParam;
+	if (NULL != DriverObject)
+	{
+		PMiProcessLoaderEntry tempcall = (PMiProcessLoaderEntry)MiProcessLoaderEntry1;
+		tempcall(DriverObject->DriverSection, 0);
+		DriverObject->DriverSection = NULL;
+		DriverObject->DriverStart = NULL;
+		DriverObject->DriverSize = 0;
+		DriverObject->DriverUnload = NULL;
+	}
+
+	PsTerminateSystemThread(STATUS_SUCCESS);
+	return ;
+}
+
+NTSTATUS DriverEntry(PDRIVER_OBJECT driver, PUNICODE_STRING reg_path)
+{
+	KdPrint(("Enter the driver\n"));
+	driver->DriverUnload = Unload;
+
+	HANDLE hThread;
+	KdPrint(("Run To Here!\n"));
+	NTSTATUS status = PsCreateSystemThread(&hThread, 0, NULL, NULL, NULL, HideDriver, (PVOID)driver);
+	if (!NT_SUCCESS(status))
+	{
+		KdPrint(("Create Thread Error!\n"));
+	}
+	ZwClose(hThread);
+	TempFlags = TRUE;
+
+	return STATUS_SUCCESS;
+}
+```
+
+最后，如果只是简单将驱动从链上摘除，PCHunter等工具还是可以从模块的其他特征搜索到，PCHunter中会红色显示，说明驱动有问题。这里要避免这个问题，则需要将驱动的额外信息抹掉，如下。
+
+```
+DriverObject->DriverSection = NULL;
+DriverObject->DriverStart = NULL;
+DriverObject->DriverSize = 0;
+DriverObject->DriverUnload = NULL;
+```
+
+抹掉这些信息时，则不能直接在`DriverEntry`中进行，因为在该函数返回时依然要保证驱动的完整性，否则会导致蓝屏。所以要专门启动线程在等待`DriverEntry`调用完毕后再做这些事情。
+
+
 ###一种特殊钩子###
+
 
 
 ###进程隐藏###
