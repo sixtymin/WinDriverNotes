@@ -1,7 +1,7 @@
 
 #派遣函数#
 
-驱动到目前为止理解它就是系统的`I/O`的扩展，主要功能是负责处理`I/O`请求。从前面驱动的简单结构可知，驱动中的`I/O`请求大部分是派遣函数在处理，用户模式下对驱动的`I/O`请求全部由操作系统转化为一个IRP的数据结构，不同的IRP被`派遣`到不同的派遣函数中。
+学习到目前为止，对驱动的理解就是它其实只是系统的`I/O`的扩展，主要功能是负责处理`I/O`请求。从前面驱动的简单结构可知，驱动中的`I/O`请求大部分是派遣函数在处理，用户模式下对驱动的`I/O`请求全部由操作系统转化为一个被称为`IRP`的数据结构，不同的IRP被`派遣`到不同的派遣函数中。
 
 每个IRP中包含了两个数据，`MajorFunction`和`MinorFunction`，它们分别记录了IRP的主类型和子类型。前面学习的两类驱动中都在`DriverEntry`中注册了IRP的派遣函数。
 
@@ -158,7 +158,7 @@ int _tmain(int argc, _TCHAR* argv[])
 	if (bRet)
 	{
 		printf("Read %d byte: ", ulRead);
-		for (int i = 0; i < (int)ulRead; i++)
+		for (int i = 0; i < (int)ulRead; i++)//>
 		{
 			printf("%02X ", buffer[i]);
 		}
@@ -190,14 +190,17 @@ int _tmain(int argc, _TCHAR* argv[])
 
 **直接方式读写设备**，操作系统会将用户模式下的缓存区锁住，然后操作系统将这段缓存区在内核模式地址再映射一遍，这样用户模式的缓冲区和内核模式的缓冲区指向了统一区域的物理内存。这样进程空间切换，也影响不到驱动的读写了。这种方式少了内存复制的开销，但是多出了地址映射。
 
-在内核中可以通过`pIrp->MdlAddress`来获取内核中映射的地址段，DDK提供了如下几个函数可用与获取要读写的内存地址。
+在内核中可以通过`pIrp->MdlAddress`来获取应用层的虚拟内存的信息，NTDDK已经定义了如下几个宏可以帮助获取信息。
 
 ```
-// 获取用户层内存的映射情况。并非内核中直接可用内存地址。
-ULONG mdlLen = MmGetMdlByteCount(pIrp->MdlAddress);	// 获取用户层内存buffer在内核映射的长度
-PVOID lpBuff = MmGetMdlVirtualAddress(pIrp->MdlAddress); // 获取用户层内存Buffer在内核映射内存块的地址
-ULONG mdlOffset = MmGetMdlByteOffset(pIrp->MdlAddress); // 获取用户层内存Buffer在内核映射内存块中的偏移
+MmGetMdlVirtualAddress(Mdl);	// 获取要读写的用户层虚拟内存地址
+MmGetMdlByteCount(Mdl);         // 获取读取的字节
+MmGetMdlByteOffset(Mdl);        // 读取读写R3内存地址与页基址之间的偏移量
+```
 
+这种方式需要使用系统函数将用户层的虚拟地址所对应物理内存在内核中再进行一次映射，如下代码块所示，使用`MmGetSystemAddressForMdlSafe`可以将用户层虚拟地址对应物理内存在内核中再映射一次。
+
+```
 // 获取MDL在内核模式下的映射地址，可以直接使用
 PVOID kernelAddr = MmGetSystemAddressForMdlSafe(pIrp->MdlAddress, NormalPagePriority);
 ```
@@ -221,5 +224,26 @@ __except(EXCEPTION_EXECUTE_HANDLER)
 ```
 
 `I/O`设备控制操作中也涉及缓存的使用，其实和上述三种方式一样。
+
+```
+{
+	// 输入输出缓存长度获取
+	PIO_STACK_LOCATION pIOStack = IoGetCurrentIrpStackLocation(pIrp);
+	pIOStack->Parameters.Read.Length;
+	pIOStack->Parameters.Write.Length;
+	pIOStack->Parameters.DeviceIoControl.InputBufferLength;
+	pIOStack->Parameters.DeviceIoControl.OutputBufferLength;
+
+	// 缓存方式获取读写缓存
+	pIrp->AssociatedIrp.SystemBuffer;
+
+	// 直接I/O方式获取内存
+	pIrp->MdlAddress;
+	LPVOID lpBuffer = MmGetSystemAddressForMdlSafe(pIrp->MdlAddress, NormalPagePriority);
+
+	// 其他方式，直接读写R3层内存
+	pIrp->UserBuffer
+}
+```
 
 By Andy@2018-11-29 10:22:36
