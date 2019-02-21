@@ -10,6 +10,15 @@ WCHAR* s_lpSymbolicName = L"\\??\\HelloDDK";
 						METHOD_BUFFERED,\
 						FILE_ANY_ACCESS)
 
+
+#define ID_IOCTL_TRANSMIT_EVENT CTL_CODE(\
+						FILE_DEVICE_UNKNOWN,\
+						0x801,\
+						METHOD_BUFFERED,\
+						FILE_ANY_ACCESS)
+
+
+
 #pragma PAGECODE
 VOID SystemThread(IN PVOID pContext)
 {
@@ -170,14 +179,21 @@ VOID EventTest()
 }
 
 #pragma PAGECODE
+VOID SetUserEvent(HANDLE hEvent)
+{
+	
+
+}
+
+#pragma PAGECODE
 NTSTATUS HelloDDKIoCtlRoutine(IN PDEVICE_OBJECT pDevObj, IN PIRP pIrp)
 {
 	KdPrint(("Enter HelloDDKIoCtlRoutine DevObj: %p\n", pDevObj));
 	NTSTATUS status = STATUS_SUCCESS;
 
 	PIO_STACK_LOCATION pIoStack = IoGetCurrentIrpStackLocation(pIrp);
-	//ULONG cbInBuffer = pIoStack->Parameters.DeviceIoControl.InputBufferLength;
-	//ULONG cbOutBuffer = pIoStack->Parameters.DeviceIoControl.OutputBufferLength;
+	ULONG cbInBuffer = pIoStack->Parameters.DeviceIoControl.InputBufferLength;
+	ULONG cbOutBuffer = pIoStack->Parameters.DeviceIoControl.OutputBufferLength;
 
 	ULONG ctlCode = pIoStack->Parameters.DeviceIoControl.IoControlCode;
 	switch (ctlCode)
@@ -189,6 +205,12 @@ NTSTATUS HelloDDKIoCtlRoutine(IN PDEVICE_OBJECT pDevObj, IN PIRP pIrp)
 
 		KdPrint(("Event Test: \n"));
 		EventTest();
+	}
+	case ID_IOCTL_TRANSMIT_EVENT:
+	{
+		KdPrint(("Start Thread Set User Event:"));
+		HANDLE hEvent = (HANDLE)pIrp->
+		SetUserEvent();
 	}
 	default:
 		break;
