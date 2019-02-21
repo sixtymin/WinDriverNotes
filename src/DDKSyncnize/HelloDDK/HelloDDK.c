@@ -1,5 +1,4 @@
 
-
 #include "HelloDDK.h"
 
 WCHAR* s_lpDeviceName = L"\\Device\\MyDDKDevice";
@@ -11,6 +10,7 @@ WCHAR* s_lpSymbolicName = L"\\??\\HelloDDK";
 						METHOD_BUFFERED,\
 						FILE_ANY_ACCESS)
 
+#pragma PAGECODE
 VOID SystemThread(IN PVOID pContext)
 {
 	UNREFERENCED_PARAMETER(pContext);
@@ -25,6 +25,7 @@ VOID SystemThread(IN PVOID pContext)
 	PsTerminateSystemThread(STATUS_SUCCESS);
 }
 
+#pragma PAGECODE
 VOID ProcessThread(IN PVOID pContext)
 {
 	UNREFERENCED_PARAMETER(pContext);
@@ -39,6 +40,7 @@ VOID ProcessThread(IN PVOID pContext)
 	PsTerminateSystemThread(STATUS_SUCCESS);
 }
 
+#pragma PAGECODE
 VOID CreateThread_Test()
 {
 	HANDLE hSystemThread, hProcThread;
@@ -57,8 +59,8 @@ NTSTATUS DriverEntry(IN PDRIVER_OBJECT pDriverObject, IN PUNICODE_STRING pRegist
 	pDriverObject->MajorFunction[IRP_MJ_CREATE] = HelloDDKDispatchRoutine;
 	pDriverObject->MajorFunction[IRP_MJ_READ] = HelloDDKDispatchRoutine;
 	pDriverObject->MajorFunction[IRP_MJ_WRITE] = HelloDDKDispatchRoutine;
-	pDriverObject->MajorFunction[IRP_MJ_WRITE] = HelloDDKIoCtlRoutine;
-	pDriverObject->MajorFunction[IRP_MJ_CLOSE] = HelloDDKDispatchRoutine;
+	pDriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = HelloDDKIoCtlRoutine;
+	pDriverObject->MajorFunction[IRP_MJ_CLOSE] = HelloDDKDispatchRoutine;	
 
 	status = CreateDevice(pDriverObject);
 
@@ -138,14 +140,44 @@ NTSTATUS HelloDDKDispatchRoutine(IN PDEVICE_OBJECT pDevObj, IN PIRP pIrp)
 }
 
 #pragma PAGECODE
+VOID EventTestThread(IN PVOID pContext)
+{
+	PKEVENT pEvent = (PKEVENT)pContext;
+	KdPrint(("Enter EventTestThread\n"));
+	if (pEvent)
+	{
+		KeSetEvent(pEvent, IO_NO_INCREMENT, FALSE);
+	}
+	KdPrint(("Leave EventTestThread\n"));
+	PsTerminateSystemThread(STATUS_SUCCESS);
+}
+
+#pragma PAGECODE
+VOID EventTest()
+{
+	HANDLE hMyThread;
+	KEVENT hEvent;
+
+	KeInitializeEvent(&hEvent, NotificationEvent, FALSE);
+	NTSTATUS status = PsCreateSystemThread(&hMyThread, 0, NULL, NtCurrentProcess(), NULL, EventTestThread, &hEvent);
+	if (!NT_SUCCESS(status))
+	{
+		KdPrint(("Create Process Thread Error!\n"));
+	}
+
+	KeWaitForSingleObject(&hEvent, Executive, KernelMode, FALSE, NULL);
+	KdPrint(("Event has Single\n"));
+}
+
+#pragma PAGECODE
 NTSTATUS HelloDDKIoCtlRoutine(IN PDEVICE_OBJECT pDevObj, IN PIRP pIrp)
 {
 	KdPrint(("Enter HelloDDKIoCtlRoutine DevObj: %p\n", pDevObj));
 	NTSTATUS status = STATUS_SUCCESS;
 
 	PIO_STACK_LOCATION pIoStack = IoGetCurrentIrpStackLocation(pIrp);
-	ULONG cbInBuffer = pIoStack->Parameters.DeviceIoControl.InputBufferLength;
-	ULONG cbOutBuffer = pIoStack->Parameters.DeviceIoControl.OutputBufferLength;
+	//ULONG cbInBuffer = pIoStack->Parameters.DeviceIoControl.InputBufferLength;
+	//ULONG cbOutBuffer = pIoStack->Parameters.DeviceIoControl.OutputBufferLength;
 
 	ULONG ctlCode = pIoStack->Parameters.DeviceIoControl.IoControlCode;
 	switch (ctlCode)
@@ -153,7 +185,10 @@ NTSTATUS HelloDDKIoCtlRoutine(IN PDEVICE_OBJECT pDevObj, IN PIRP pIrp)
 	case ID_IOCTL_TEST1:
 	{
 		KdPrint(("Create Thread: \n"));
-		CreateThread_Test();		
+		CreateThread_Test();
+
+		KdPrint(("Event Test: \n"));
+		EventTest();
 	}
 	default:
 		break;
