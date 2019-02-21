@@ -48,8 +48,6 @@ Windows内核安全与驱动开发
 
 ---------------------------
 // 关于内核 和 驱动的博客文章
-https://blog.csdn.net/ikerpeng/article/category/2506231 // 基础 博客
-https://blog.csdn.net/blog_index/article/list/4     // 张佩博客
 http://www.yiiyee.cn/Blog/
 
 https://blog.csdn.net/Sagittarius_Warrior/article/category/5977339/2
