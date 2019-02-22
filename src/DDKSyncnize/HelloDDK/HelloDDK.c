@@ -10,14 +10,11 @@ WCHAR* s_lpSymbolicName = L"\\??\\HelloDDK";
 						METHOD_BUFFERED,\
 						FILE_ANY_ACCESS)
 
-
 #define ID_IOCTL_TRANSMIT_EVENT CTL_CODE(\
 						FILE_DEVICE_UNKNOWN,\
 						0x801,\
 						METHOD_BUFFERED,\
 						FILE_ANY_ACCESS)
-
-
 
 #pragma PAGECODE
 VOID SystemThread(IN PVOID pContext)
@@ -181,9 +178,56 @@ VOID EventTest()
 #pragma PAGECODE
 VOID SetUserEvent(HANDLE hEvent)
 {
+	if (hEvent == NULL)
+		return;
 	
-
+	PKEVENT pEvent = NULL;
+	NTSTATUS Status = ObReferenceObjectByHandle(hEvent, EVENT_MODIFY_STATE, *ExEventObjectType, KernelMode, (PVOID*)&pEvent, NULL);
+	if (NT_SUCCESS(Status) && pEvent != NULL)
+	{
+		KeSetEvent(pEvent, IO_NO_INCREMENT, FALSE);
+		ObDereferenceObject(pEvent);
+	}
 }
+
+#pragma PAGECODE
+VOID SemaphoreThread(IN PVOID pContext)
+{
+	PKSEMAPHORE pkSemaphore = (PKSEMAPHORE)pContext;
+	KdPrint(("Enter Semaphore Thread\n"));
+	if (pkSemaphore)
+	{
+		KeReleaseSemaphore(pkSemaphore, IO_NO_INCREMENT, 1, FALSE);
+	}
+	KdPrint(("Leave Semaphore Thread\n"));
+	PsTerminateSystemThread(STATUS_SUCCESS);
+}
+
+#pragma PAGECODE
+VOID SemaphoreTest()
+{
+	HANDLE hMyThread;
+	KSEMAPHORE kSemaphore;
+
+	KeInitializeSemaphore(&kSemaphore, 2, 2);
+	LONG count = KeReadStateSemaphore(&kSemaphore);
+	KdPrint(("The Semaphore count is %d\n", count));
+	KeWaitForSingleObject(&kSemaphore, Executive, KernelMode, FALSE, NULL);
+	count = KeReadStateSemaphore(&kSemaphore);
+	KdPrint(("The Semaphore count is %d\n", count));
+	KeWaitForSingleObject(&kSemaphore, Executive, KernelMode, FALSE, NULL);
+
+	NTSTATUS status = PsCreateSystemThread(&hMyThread, 0, NULL, NtCurrentProcess(), NULL, SemaphoreThread, &kSemaphore);
+	if (NT_SUCCESS(status))
+	{
+		ZwClose(hMyThread);
+	}
+	KeWaitForSingleObject(&kSemaphore, Executive, KernelMode, FALSE, NULL);
+	KdPrint(("After KeWaitForSingleObject\n"));
+
+	return ;
+}
+
 
 #pragma PAGECODE
 NTSTATUS HelloDDKIoCtlRoutine(IN PDEVICE_OBJECT pDevObj, IN PIRP pIrp)
@@ -192,8 +236,8 @@ NTSTATUS HelloDDKIoCtlRoutine(IN PDEVICE_OBJECT pDevObj, IN PIRP pIrp)
 	NTSTATUS status = STATUS_SUCCESS;
 
 	PIO_STACK_LOCATION pIoStack = IoGetCurrentIrpStackLocation(pIrp);
-	ULONG cbInBuffer = pIoStack->Parameters.DeviceIoControl.InputBufferLength;
-	ULONG cbOutBuffer = pIoStack->Parameters.DeviceIoControl.OutputBufferLength;
+	//ULONG cbInBuffer = pIoStack->Parameters.DeviceIoControl.InputBufferLength;
+	//ULONG cbOutBuffer = pIoStack->Parameters.DeviceIoControl.OutputBufferLength;
 
 	ULONG ctlCode = pIoStack->Parameters.DeviceIoControl.IoControlCode;
 	switch (ctlCode)
@@ -205,12 +249,15 @@ NTSTATUS HelloDDKIoCtlRoutine(IN PDEVICE_OBJECT pDevObj, IN PIRP pIrp)
 
 		KdPrint(("Event Test: \n"));
 		EventTest();
+
+		KdPrint(("Semaphore Test: \n"));
+		SemaphoreTest();
 	}
 	case ID_IOCTL_TRANSMIT_EVENT:
 	{
 		KdPrint(("Start Thread Set User Event:"));
-		HANDLE hEvent = (HANDLE)pIrp->
-		SetUserEvent();
+		HANDLE hEvent = (HANDLE)*(LONG_PTR*)pIrp->AssociatedIrp.SystemBuffer;
+		SetUserEvent(hEvent);
 	}
 	default:
 		break;
@@ -223,3 +270,5 @@ NTSTATUS HelloDDKIoCtlRoutine(IN PDEVICE_OBJECT pDevObj, IN PIRP pIrp)
 	KdPrint(("Leave HelloDDKIoCtlRoutine\n"));
 	return status;
 }
+
+
