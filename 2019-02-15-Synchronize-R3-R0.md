@@ -294,7 +294,194 @@ VOID SemaphoreTest()
 }
 ```
 
-**内核互斥提**
+**内核互斥体**
+
+内核中互斥体的使用于R3层类似，内核的数据结构为`KMUTEX`，使用前先初始化（`KeInitializeMutex()`）内核互斥体对象。如下代码段，给出了如何使用互斥体的简单例子：
+
+```
+VOID __stdcall MutexThread1(PVOID lpParam)
+{
+	KdPrint(("Enter MutexThread1\n"));
+	PKMUTEX pKMutex = (PKMUTEX)lpParam;
+	if (pKMutex)
+	{
+		KeWaitForSingleObject(pKMutex, Executive, KernelMode, FALSE, NULL);
+		KdPrint(("MutexThread1 After Wait For Mutext!\n"));
+
+		KeStallExecutionProcessor(50);
+		KdPrint(("MutexThread1 After stall Execute!\n"));
+
+		KeReleaseMutex(pKMutex, FALSE);
+	}
+
+	KdPrint(("Leave MutexThread1\n"));
+	PsTerminateSystemThread(STATUS_SUCCESS);
+}
+
+VOID __stdcall MutexThread2(PVOID lpParam)
+{
+	KdPrint(("Enter MutexThread2\n"));
+	PKMUTEX pKMutex = (PKMUTEX)lpParam;
+	if (pKMutex)
+	{
+		KeWaitForSingleObject(pKMutex, Executive, KernelMode, FALSE, NULL);
+		KdPrint(("MutexThread2 After Wait For Mutext!\n"));
+
+		KeStallExecutionProcessor(50);
+		KdPrint(("MutexThread2 After stall Execute!\n"));
+
+		KeReleaseMutex(pKMutex, FALSE);
+	}
+
+	KdPrint(("Leave MutexThread2\n"));
+	PsTerminateSystemThread(STATUS_SUCCESS);
+}
+
+#pragma PAGECODE
+VOID MutexTest()
+{
+	HANDLE hMyThread1, hMyThread2;
+	KMUTEX kMutex;
+	KdPrint(("Enter MutexTest Func\n"));
+	KeInitializeMutex(&kMutex, 0);
+
+	NTSTATUS status = PsCreateSystemThread(&hMyThread1, 0, NULL, NtCurrentProcess(), NULL, MutexThread1, &kMutex);
+	status = PsCreateSystemThread(&hMyThread2, 0, NULL, NtCurrentProcess(), NULL, MutexThread2, &kMutex);
+	PVOID Pointer_Array[2];
+	if (hMyThread1)
+	{
+		ObReferenceObjectByHandle(hMyThread1, 0, NULL, KernelMode, &Pointer_Array[0], NULL);
+		ZwClose(hMyThread1);
+	}
+	if (hMyThread2)
+	{
+		ObReferenceObjectByHandle(hMyThread2, 0, NULL, KernelMode, &Pointer_Array[1], NULL);
+		ZwClose(hMyThread2);
+	}
+
+	KeWaitForMultipleObjects(2, Pointer_Array, WaitAll, Executive, KernelMode, FALSE, NULL, NULL);
+	ObDereferenceObject(Pointer_Array[0]);
+	ObDereferenceObject(Pointer_Array[1]);
+
+	KdPrint(("Leave MutexTest Func\n"));
+}
+```
+
+**快速互斥体**
+
+快速互斥体(Fast Mutex)是DDK提供的另外一种内核同步对象，与前面介绍普通互斥体类似，但是其执行速度比普通互斥体快，同时它也有一个缺点：无法递归获取互斥体对象。
+
+与普通的互斥体不同，它使用`FAST_MUTEX`数据结构来描述快速互斥体对象，它有自己独特的函数用于获取和释放互斥体：`KeInitializeFastMutex()`用于初始化快速互斥体，`ExAcquireFastMutex()`用于获取快速互斥体，`KeReleaseFastMutex()`用于释放互斥体。
+
+**其他的同步方法**
+
+1. 自旋锁，前面简单介绍过用法，对于想要同步的某段代码区域，就可以使用自旋锁，它类似R3的临界区，同样也不适合于大段代码或具有延时的同步操作。在单CPU中自旋锁是通过提升IRQL实现，而在多CPU中实现方法则比较复杂。
+2. 使用互锁操作进行同步，即`InterlockedXX`和`ExInterlockedXX`，`Ex*`系列函数需要提供自旋锁，所以它不能够操作分页内存。
+
+###IRP的同步###
+
+IRP是对设备的操作转化而来，一般情况下IRP由操作系统异步发送。异步处理IRP有助于提高效率，但是有时候异步处理会导致逻辑错误；这时候就需要将异步的IRP进行同步化。
+
+**同步与异步操作原理**
+
+操作设备的函数，比如`ReadFile()`和`DeviceIOControl()`等，如果是同步操作，那么在请求完成以前这个函数是不会返回；对于异步操作，一旦将请求传递给内核后，该函数马上返回，即这些函数调用完成后，请求任务并不一定完成。
+
+同步操作时，在`DeviceIOControl()`等函数内部会调用`WaitForSingleObject`等函数去等待一个事件；这个事件会在IRP被结束时由`IoCompleteRequest()`函数来设置该事件。而异步操作中，`DeviceIOControl()`函数被调用时，其内部产生IRP并将它传递给驱动内部派遣函数；此时`DeviceIOControl()`函数并不等待该IRP结束，而是直接返回；当IRP经过一段时间结束时，操作系统出发IRP相关的事件，用于通知应用程序IRP请求结束。由此可见异步的操作比同步操作要更有效率。
+
+在R3层要对设备进行异步操作，那么对于`CreateFile`的第六个参数`DWORD dwFlagAndAttributes`要设置`FILE_FLAG_OVERLAPPED`标志，如果不设置该参数，打开的设备句柄就不具备异步操作能力。
+
+一旦在打开设备时设置了异步操作的标记，那么在操作设备时就可以使用异步特性。无论`ReadFile()`或是`DeviceIoControl()`等函数都包含一个参数`LPOVERLAPPED lpOverlapped`，它是用于异步操作必要结构，如下所示。
+
+```
+typedef struct _OVERLAPPED {
+    ULONG_PTR Internal;
+    ULONG_PTR InternalHigh;
+    union {
+        struct {
+            DWORD Offset;
+            DWORD OffsetHigh;
+        } DUMMYSTRUCTNAME;
+        PVOID Pointer;
+    } DUMMYUNIONNAME;
+    HANDLE  hEvent;	// 用于在该操作完成后通知应用程序，由IoCompleteRequest设置状态
+} OVERLAPPED, *LPOVERLAPPED;
+```
+
+所以在调用设备操作函数时，初始化该结构体并传递给函数，只需要等待其中事件即可。
+
+系统SDK还提供了另外一种用于异步操作的函数，`ReadFileEx`和`WriteFileEx`函数，他们专门用于异步读写操作，不能进行同步读写。
+
+```
+BOOL
+WINAPI
+ReadFileEx(
+    HANDLE hFile,
+    LPVOID lpBuffer,
+    DWORD nNumberOfBytesToRead,
+    LPOVERLAPPED lpOverlapped,
+    LPOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine);
+
+BOOL
+WINAPI
+WriteFileEx(
+    HANDLE hFile,
+    LPCVOID lpBuffer,
+    DWORD nNumberOfBytesToWrite,
+    LPOVERLAPPED lpOverlapped,
+    LPOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine);
+```
+
+其中的`LPOVERLAPPED lpOverlapped`的用法与前面类似，参数`LPOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine`则是提供给内核回调的例程。Windows在完成了操作之后，插入一个APC用于调用这个回调函数。要让线程调用APC，那么需要将线程置于警惕（Alert）状态，多个API可以使线程进入静态状态，比如`SleepEx`，`WaitForSingleObjectEx`，`WaiForMutipleObjectEx`等函数，它们都有一个参数`BOOL bAlertable`用于设置线程进入警惕模式。
+
+**IRP同步与异步完成**
+
+IRP被异步完成即IRP不在派遣函数中调用`IoCompleteRequest()`内核函数，调用`IoCompleteRequest()`即意味着IRP请求结束，标志着本次对设备操作结束。
+
+异步操作IRP只有两种形式，通过`ReadFile`发起的异步请求，当读取的派遣函数返回时并不调用函数完成此IRP，而是将IRP状态设置为`ERROR_IO_PENDING`，意味着ReadFile并没有真正完成；当IRP真正完成时即调用`IoCompleteRequest`函数设置overlap中的事件。对于`ReadFileEx`发起的具有回调的操作，当IRP真正结束时，调用`IoCompleteRequest`后则将提供的回调函数插入APC队列；如果线程进入了警惕状态则线程返回时即执行APC。
+
+对于挂起的IRP则需要设置IRP的状态，同时派遣函数也需要返回挂起状态，如下代码所示：
+
+```
+NTSTATUS HelloDDKRead(IN PDEVICE_OBJECT pDevObj, IN PIRP pIrp)
+{
+	KdPrint(("Enter HelloDDKRead\n"));
+
+	PDEVICE_EXTENSION pDevExt = (PDEVICE_EXTENSION)pDevObj->DeviceExtension;
+	PMY_IRP_ENTRY pIrpEntry = (PMY_IRP_ENTRY)ExAllocatePool(PagedPool, sizeof(MY_IRP_ENTRY));
+	pIrpEntry->pIrp = pIrp;
+	InsertHeadList(pDevExt->pIrpLinkList, &pIrpEntry->ListEntry);
+
+	IoMarkIrpPending(pIrp);
+
+	KdPrint(("Leave HelloDDKRead\n"));
+
+	return STATUS_PENDING;
+}
+```
+
+当然对于挂起的IRP则一定在完成了操作只要要将其调用`IoCompleteRequest`函数完成。
+
+对于挂起IRP除了将其完成外，另外一种操作是取消。取消IRP可以由R3层调用`CancelIO()`来取消设备上的IRP，也可以在内核中调用DDK的`IoCancelIrp()`函数来取消IRP。但是在DDK的`IoCancelIrp`函数内部会先获取一个取消自旋锁，在获取自旋锁后则调用取消回调例程。因此对于可能要取消的IRP一定要设置取消例程。调用`IoSetCancelRoutine()`函数可以为IRP设置取消例程，如果将第二个参数设置为`NULLL`也可以用于给IRP删除回调例程。如下为取消例程例子：
+
+```
+VOID CancelReadIrp(IN PDEVICE_OBJECT pDevObj, IN PIRP pIrp)
+{
+	KdPrint(("Enter CancelReadIrp\n"));
+
+	pIrp->IoStatus.Status = STATUS_CANCELLED;
+	pIrp->IoStatus.Information = 0;
+	IoCompleteRequest(pIrp, IO_NO_INCREMENT);
+
+	IoReleaseCancelSpinLock(pIrp->CancelIrql);
+	KdPrint(("Leave CancelReadIrp\n"));
+}
+```
+
+即在取消例程中一方面要完成IRP，但是状态不是成功而是取消（STATUS_CANCELLED）；再者就要将取消自旋锁释放。
+
+IRP同步中有一种实现串行化的方法，即`StartIO`，它可以将IRP请求进行序列化。`StartIO`例程运行在`DISPATCH_LEVEL`级别上，因此不能使用分页内存。除了DDK中提供的`StartIO`，还可以自定义`StartIO`。
+
+这块内容用到时返回去看一下。
 
 
 By Andy@2019-02-19 18:42:32

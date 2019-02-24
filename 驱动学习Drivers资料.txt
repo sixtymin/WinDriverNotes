@@ -40,30 +40,16 @@ https://i.youku.com/i/UMzQzODg3MzU2/videos?spm=a2hzp.8244740.0.0
 // 基础视频
 https://www.bilibili.com/video/av26193169/
 
->> 看到这里
-
 // 书籍
 Windows驱动开发技术详解
-Windows内核安全与驱动开发
+Windows内核安全与驱动开发   <<<<<<<<<<<<<<<<<<<<<<<<<<<
+竹林蹊径：深入浅出Windows驱动开发
 
 ---------------------------
 // 关于内核 和 驱动的博客文章
 http://www.yiiyee.cn/Blog/
-
-https://blog.csdn.net/Sagittarius_Warrior/article/category/5977339/2
 https://blog.csdn.net/shevacoming/article/category/1143898/4
 https://bbs.pediy.com/user-353841-1.htm
-
-
-X64位零基础驱动编程 视频
-https://i.youku.com/i/UMTYxNjAzNDI3Mg==/playlists?spm=a2hzp.8253869.0.0
-
-
-微软github驱动框架 WDF
-https://github.com/Microsoft/Windows-Driver-Frameworks
-
-
-https://www.bilibili.com/video/av38525791/?spm_id_from=trigger_reload
 
 -----------------------------------
 1. 内核编程.rar
@@ -74,6 +60,8 @@ https://www.bilibili.com/video/av38525791/?spm_id_from=trigger_reload
 6. Windows_7设备驱动程序开发
 
 
+VT虚拟化 视频教程：
+https://www.bilibili.com/video/av38525791/?spm_id_from=trigger_reload
 
 
 

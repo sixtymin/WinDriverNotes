@@ -601,7 +601,6 @@ kd> uf 0xXXXXXXXX // 反汇编地址处的函数
 `ObReferenceObjectByName()`和`ObDereferenceObject()`两个函数用于获取内核中的对象并增减引用。
 
 ```
-
 #include <wdm.h>
 #include <ntddkbd.h>
 

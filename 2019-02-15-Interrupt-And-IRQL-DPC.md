@@ -48,7 +48,11 @@ IDT的整体布局可以按照`异常->空白->5系->硬`顺序来进行记忆�
 硬件中断响应使用DPC的例子代码如下：
 
 ```
+//初始化DPC
+KeInitializeDpc(&pdx->DPC, DpcForISR, (PVOID)context);
 
+// 将不重要的中断处理放到DPC例程中处理
+IoReqeustDpc(device, device->CurrentIrp, NULL);
 ```
 
 `KeInitializeDpc()`用于初始化一个DPC对象，`IoRequestDpc()`用于将DPC插入到系统的DPC队列中等待执行。
