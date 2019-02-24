@@ -50,7 +50,7 @@ int _tmain(int argc, _TCHAR* argv[])
 			"MyDDKDevice", GetLastError());
 		return 1;
 	}
-
+	
 	DWORD dwReturn = 0;
 	CHAR szInput[10] = {};
 	CHAR szOutput[10] = {};

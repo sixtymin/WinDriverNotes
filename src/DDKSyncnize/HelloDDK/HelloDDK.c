@@ -228,6 +228,72 @@ VOID SemaphoreTest()
 	return ;
 }
 
+VOID __stdcall MutexThread1(PVOID lpParam)
+{
+	KdPrint(("Enter MutexThread1\n"));
+	PKMUTEX pKMutex = (PKMUTEX)lpParam;
+	if (pKMutex)
+	{
+		KeWaitForSingleObject(pKMutex, Executive, KernelMode, FALSE, NULL);
+		KdPrint(("MutexThread1 After Wait For Mutext!\n"));
+
+		KeStallExecutionProcessor(50);
+		KdPrint(("MutexThread1 After stall Execute!\n"));
+
+		KeReleaseMutex(pKMutex, FALSE);
+	}
+	
+	KdPrint(("Leave MutexThread1\n"));
+	PsTerminateSystemThread(STATUS_SUCCESS);	
+}
+
+VOID __stdcall MutexThread2(PVOID lpParam)
+{
+	KdPrint(("Enter MutexThread2\n"));
+	PKMUTEX pKMutex = (PKMUTEX)lpParam;
+	if (pKMutex)
+	{
+		KeWaitForSingleObject(pKMutex, Executive, KernelMode, FALSE, NULL);
+		KdPrint(("MutexThread2 After Wait For Mutext!\n"));
+
+		KeStallExecutionProcessor(50);
+		KdPrint(("MutexThread2 After stall Execute!\n"));
+
+		KeReleaseMutex(pKMutex, FALSE);
+	}
+
+	KdPrint(("Leave MutexThread2\n"));
+	PsTerminateSystemThread(STATUS_SUCCESS);	
+}
+
+#pragma PAGECODE
+VOID MutexTest()
+{
+	HANDLE hMyThread1, hMyThread2;
+	KMUTEX kMutex;
+	KdPrint(("Enter MutexTest Func\n"));
+	KeInitializeMutex(&kMutex, 0);
+
+	NTSTATUS status = PsCreateSystemThread(&hMyThread1, 0, NULL, NtCurrentProcess(), NULL, MutexThread1, &kMutex);
+	status = PsCreateSystemThread(&hMyThread2, 0, NULL, NtCurrentProcess(), NULL, MutexThread2, &kMutex);
+	PVOID Pointer_Array[2];
+	if (hMyThread1)
+	{
+		ObReferenceObjectByHandle(hMyThread1, 0, NULL, KernelMode, &Pointer_Array[0], NULL);
+		ZwClose(hMyThread1);
+	}
+	if (hMyThread2)
+	{
+		ObReferenceObjectByHandle(hMyThread2, 0, NULL, KernelMode, &Pointer_Array[1], NULL);
+		ZwClose(hMyThread2);
+	}
+
+	KeWaitForMultipleObjects(2, Pointer_Array, WaitAll, Executive, KernelMode, FALSE, NULL, NULL);
+	ObDereferenceObject(Pointer_Array[0]);
+	ObDereferenceObject(Pointer_Array[1]);
+	
+	KdPrint(("Leave MutexTest Func\n"));
+}
 
 #pragma PAGECODE
 NTSTATUS HelloDDKIoCtlRoutine(IN PDEVICE_OBJECT pDevObj, IN PIRP pIrp)
@@ -252,6 +318,9 @@ NTSTATUS HelloDDKIoCtlRoutine(IN PDEVICE_OBJECT pDevObj, IN PIRP pIrp)
 
 		KdPrint(("Semaphore Test: \n"));
 		SemaphoreTest();
+
+		KdPrint(("Mutex Test:\n"));
+		MutexTest();
 	}
 	case ID_IOCTL_TRANSMIT_EVENT:
 	{
@@ -270,5 +339,4 @@ NTSTATUS HelloDDKIoCtlRoutine(IN PDEVICE_OBJECT pDevObj, IN PIRP pIrp)
 	KdPrint(("Leave HelloDDKIoCtlRoutine\n"));
 	return status;
 }
-
 
